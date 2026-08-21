@@ -2,8 +2,14 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>楓之谷M 掛機收益分析與截圖自動辨識工具</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="theme-color" content="#0f172a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>楓之谷M 掛機收益分析與全圖截圖辨識工具</title>
+  
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.json">
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,14 +28,57 @@
     <!-- Header -->
     <header class="app-header">
       <div class="header-badge">
-        <i class="fa-solid fa-bolt"></i> MapleStory M Auto-Battle Analytics
+        <i class="fa-solid fa-mobile-screen-button"></i> 跨裝置免安裝・全設備通用網頁工具
       </div>
       <h1>
         <i class="fa-solid fa-coins text-gold"></i>
-        楓之谷M 掛機收益計算與全圖截圖辨識
+        楓之谷M 掛機收益計算與截圖辨識
       </h1>
-      <p>上傳或貼上遊戲全圖，自動辨識地圖 (神秘之力/真實之力/星力戰場) 與殺怪、楓幣、經驗值數據</p>
+      <p>完全不需要綁定設備！電腦、手機 (iOS / Android)、平板開網頁即用，離線亦可運行</p>
+      
+      <div style="margin-top: 14px; display: flex; justify-content: center; gap: 10px;">
+        <button type="button" class="btn btn-secondary" id="btnShowMobileGuide" style="font-size: 0.85rem;">
+          <i class="fa-solid fa-circle-info text-gold"></i> 📱 跨裝置 / 手機安裝說明
+        </button>
+      </div>
     </header>
+
+    <!-- Modal for Cross-Device Usage Guide -->
+    <div class="modal-overlay" id="guideModal" style="display: none;">
+      <div class="modal-card glass-card">
+        <div class="modal-header">
+          <h3><i class="fa-solid fa-mobile-screen text-gold"></i> 跨裝置與免安裝使用教學</h3>
+          <button type="button" class="btn-close-modal" id="btnCloseModal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p>本工具為 100% 純前端網頁應用程式，<strong>完全不綁定特定電腦或設備</strong>，您可以在任何裝置上使用：</p>
+          
+          <div class="guide-step-box">
+            <h4><i class="fa-solid fa-globe text-cyan"></i> 方法 1：GitHub Pages 免安裝線上網址 (推薦)</h4>
+            <p>只要有網路瀏覽器，在手機、iPhone、iPad、電腦開啟下方網址即可隨時使用：</p>
+            <div class="url-copy-box">
+              <code>https://kof315411-ship-it.github.io/007-MaplestoryM-income/</code>
+            </div>
+          </div>
+
+          <div class="guide-step-box">
+            <h4><i class="fa-solid fa-mobile-retro text-purple"></i> 方法 2：手機/平板加入主畫面 (變身APP)</h4>
+            <ul>
+              <li><strong>iPhone / iPad (Safari)</strong>：點擊下方分享按鈕 <i class="fa-solid fa-arrow-up-from-bracket"></i> ➔ 選擇「加入主畫面」。</li>
+              <li><strong>Android / Chrome</strong>：點擊右上角三點選單 ➔ 選擇「安裝應用程式」或「新增至主畫面」。</li>
+            </ul>
+          </div>
+
+          <div class="guide-step-box">
+            <h4><i class="fa-solid fa-folder-zip text-gold"></i> 方法 3：隨身碟 / 離線帶著走</h4>
+            <p>直接將本資料夾打包複製到隨身碟或傳到別台電腦，雙擊點開 <code>index.html</code> 即可直接開啟使用！</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-primary" id="btnModalCloseOk" style="width: 100%;">我知道了，開始使用</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Main Grid -->
     <div class="grid-main">
@@ -50,7 +99,7 @@
             </div>
             <div class="dropzone-text">
               <strong>拖曳截圖至此，或點擊上傳</strong>
-              <p>支援全圖截圖或局部裁切（直接 Ctrl+V 貼上即可）</p>
+              <p>支援手機相簿選圖、全圖截圖或局部剪貼簿 (Ctrl+V)</p>
             </div>
           </div>
         </div>
@@ -58,7 +107,7 @@
         <!-- Quick Action Buttons -->
         <div class="action-buttons-group">
           <button type="button" class="btn btn-primary" id="btnSelectFile" style="width: 100%;">
-            <i class="fa-solid fa-folder-open"></i> 選擇圖片檔案
+            <i class="fa-solid fa-folder-open"></i> 選擇圖片檔案 / 相片
           </button>
         </div>
 

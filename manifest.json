@@ -1,0 +1,17 @@
+{
+  "name": "楓之谷M 掛機收益分析器",
+  "short_name": "楓M掛機計算",
+  "description": "楓之谷M 自動截圖辨識、戰場地圖判讀與 1~24 小時掛機收益計算工具",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#f59e0b",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/2171/2171120.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

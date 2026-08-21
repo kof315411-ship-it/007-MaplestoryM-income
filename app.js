@@ -3,6 +3,13 @@
    ========================================================================== */
 
 document.addEventListener('DOMContentLoaded', () => {
+  // --- 註冊 Service Worker 實現跨裝置 PWA 離線支援 ---
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('[Service Worker] Registered successfully:', reg.scope))
+      .catch(err => console.log('[Service Worker] Registration skipped:', err));
+  }
+
   // --- DOM 元素引用 ---
   const dropzone = document.getElementById('dropzone');
   const fileInput = document.getElementById('fileInput');
@@ -56,9 +63,23 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnClearHistory = document.getElementById('btnClearHistory');
   const historyTableBody = document.getElementById('historyTableBody');
 
+  // Modal 彈窗
+  const btnShowMobileGuide = document.getElementById('btnShowMobileGuide');
+  const guideModal = document.getElementById('guideModal');
+  const btnCloseModal = document.getElementById('btnCloseModal');
+  const btnModalCloseOk = document.getElementById('btnModalCloseOk');
+
   // --- 全域變數 ---
   let incomeChart = null;
   let historyRecords = JSON.parse(localStorage.getItem('mapleM_income_records') || '[]');
+
+  // --- Modal 控制 ---
+  btnShowMobileGuide.addEventListener('click', () => guideModal.style.display = 'flex');
+  btnCloseModal.addEventListener('click', () => guideModal.style.display = 'none');
+  btnModalCloseOk.addEventListener('click', () => guideModal.style.display = 'none');
+  guideModal.addEventListener('click', (e) => {
+    if (e.target === guideModal) guideModal.style.display = 'none';
+  });
 
   // --- 初始化 Chart.js 圖表 ---
   initChart();
