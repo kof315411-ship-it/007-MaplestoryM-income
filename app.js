@@ -6,8 +6,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- 註冊 Service Worker 實現跨裝置 PWA 離線支援 ---
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js')
-      .then(reg => console.log('[Service Worker] Registered successfully:', reg.scope))
-      .catch(err => console.log('[Service Worker] Registration skipped:', err));
+      .then(reg => console.log('[Service Worker v3] Registered successfully:', reg.scope))
+      .catch(err => console.log('[Service Worker v3] Registration skipped:', err));
   }
 
   // --- DOM 元素引用 ---
@@ -63,8 +63,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnClearHistory = document.getElementById('btnClearHistory');
   const historyTableBody = document.getElementById('historyTableBody');
 
-  // Modal 彈窗
+  // Modal 彈窗與強制刷新按鈕
   const btnShowMobileGuide = document.getElementById('btnShowMobileGuide');
+  const btnForceReload = document.getElementById('btnForceReload');
   const guideModal = document.getElementById('guideModal');
   const btnCloseModal = document.getElementById('btnCloseModal');
   const btnModalCloseOk = document.getElementById('btnModalCloseOk');
@@ -79,6 +80,23 @@ document.addEventListener('DOMContentLoaded', () => {
   btnModalCloseOk.addEventListener('click', () => guideModal.style.display = 'none');
   guideModal.addEventListener('click', (e) => {
     if (e.target === guideModal) guideModal.style.display = 'none';
+  });
+
+  // 強制清除瀏覽器 Service Worker 舊快取並重新載入最新 app.js
+  btnForceReload.addEventListener('click', async () => {
+    if (confirm('確定要更新並重新載入最新版的辨識核心嗎？')) {
+      if ('serviceWorker' in navigator) {
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (let registration of registrations) {
+          await registration.unregister();
+        }
+      }
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map(name => caches.delete(name)));
+      }
+      window.location.reload(true);
+    }
   });
 
   // --- 初始化 Chart.js 圖表 ---
@@ -261,7 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================================================
-  // 核心邏輯 2: 雙重保險對應演算法 (數量級範圍匹配 + 行順序雙重鎖定)
+  // 核心邏輯 2: 雙重保險對應演算法 (數量級範圍匹配 + 100% 涵蓋進行時間與殺怪數)
   // ==========================================================================
 
   async function handleImageUpload(file) {
@@ -276,7 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function runMultiEngineOCR(imageSource) {
     ocrProgressBox.style.display = 'block';
-    ocrStatusText.textContent = '🚀 正在啟動高精度 4 列行順序對應 OCR 分析...';
+    ocrStatusText.textContent = '🚀 正在啟動高精度數據與戰場 OCR 分析...';
     ocrPercentText.textContent = '0%';
     ocrProgressBar.style.width = '0%';
 
@@ -292,7 +310,7 @@ document.addEventListener('DOMContentLoaded', () => {
         logger: m => {
           if (m.status === 'recognizing text') {
             const progress = Math.round(m.progress * 50);
-            ocrStatusText.textContent = `🔍 正在逐行精確辨識 4 列數據... (${progress}%)`;
+            ocrStatusText.textContent = `🔍 正在精確辨識 4 列數據... (${progress}%)`;
             ocrPercentText.textContent = `${progress}%`;
             ocrProgressBar.style.width = `${progress}%`;
           }
@@ -357,13 +375,13 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 100% 完整捕捉殺怪數與時間 (y: 18% ~ 48%)
+  // 100% 完整捕捉進行時間與殺怪數量 (y: 18% ~ 48%)
   function createAdaptiveWhiteNumbersCanvas(img) {
     const isWide = (img.width / img.height) > 1.3;
 
     let x, y, w, h;
     if (isWide) {
-      // 16:9 全圖截圖：從 y:18% 開始裁切，完整保留進行時間與殺怪數量
+      // 16:9 全圖截圖：從 y:18% 開始裁切，完美捕捉進行時間與殺怪數量
       x = Math.floor(img.width * 0.01);
       y = Math.floor(img.height * 0.18);
       w = Math.floor(img.width * 0.22);
@@ -515,7 +533,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const uniqueNums = Array.from(new Set(extractedNums));
 
-    // 3. 數量級分組匹配：
+    // 3. 數量級分組匹配 (楓之谷M 數據特徵)：
     // - 殺怪數 (Kills): < 500,000 (通常在 100 ~ 100,000)
     // - 楓幣 (Meso):   500,000 ~ 500,000,000 (百萬 ~ 億)
     // - 經驗值 (EXP):  >= 500,000,000 (十億 ~ 兆)
