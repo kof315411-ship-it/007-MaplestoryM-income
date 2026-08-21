@@ -28,7 +28,7 @@
     <!-- Header -->
     <header class="app-header">
       <div class="header-badge">
-        <i class="fa-solid fa-mobile-screen-button"></i> 跨裝置免安裝・全設備通用網頁工具 (v3.0)
+        <i class="fa-solid fa-mobile-screen-button"></i> 跨裝置免安裝・全設備通用網頁工具 (v6.0)
       </div>
       <h1>
         <i class="fa-solid fa-coins text-gold"></i>
@@ -86,8 +86,8 @@
     <!-- Main Grid -->
     <div class="grid-main">
       
-      <!-- Left Column: Upload & OCR Input Form -->
-      <section class="glass-card">
+      <!-- Left Column: Upload & OCR Input Form (Fixed Layout) -->
+      <section class="glass-card left-panel-card">
         <h2 class="card-title">
           <span class="title-icon text-gold"><i class="fa-solid fa-camera"></i></span>
           截圖辨識與數據輸入
@@ -102,7 +102,7 @@
             </div>
             <div class="dropzone-text">
               <strong>拖曳截圖至此，或點擊上傳</strong>
-              <p>支援手機相簿選圖、全圖截圖或局部剪貼簿 (Ctrl+V)</p>
+              <p>支援手機相簿選圖、全圖截圖或剪貼簿 (Ctrl+V)</p>
             </div>
           </div>
         </div>
@@ -114,14 +114,14 @@
           </button>
         </div>
 
-        <!-- Preview & Progress -->
+        <!-- Preview & Progress (Fixed Heights & Overflow Lock) -->
         <div class="preview-container" id="previewContainer">
           <div class="preview-image-wrapper">
             <img id="previewImage" src="" alt="截圖預覽">
           </div>
           <div class="ocr-progress-box" id="ocrProgressBox" style="display: none;">
             <div class="ocr-progress-header">
-              <span id="ocrStatusText" class="text-gold">辨識處理中...</span>
+              <span id="ocrStatusText" class="text-gold">辨識中...</span>
               <span id="ocrPercentText">0%</span>
             </div>
             <div class="progress-bar-bg">
@@ -130,12 +130,12 @@
           </div>
         </div>
 
-        <!-- Inputs Form -->
-        <div class="form-grid" style="margin-top: 24px;">
+        <!-- Inputs Form (Fixed 1-Column Layout to Prevent Shifting) -->
+        <div class="form-grid-fixed">
           
-          <div class="form-group full-width">
+          <div class="form-group">
             <label class="form-label" for="inputMapName">
-              <i class="fa-solid fa-map-location-dot text-gold"></i> 地圖 / 戰場名稱 (自動辨識或手動輸入)
+              <i class="fa-solid fa-map-location-dot text-gold"></i> 地圖 / 戰場名稱
             </label>
             <input type="text" id="inputMapName" class="input-control" placeholder="例：神秘之力 400 - 大哥的地盤2" value="">
           </div>

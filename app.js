@@ -6,8 +6,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- 註冊 Service Worker 實現跨裝置 PWA 離線支援 ---
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js')
-      .then(reg => console.log('[Service Worker v5] Registered successfully:', reg.scope))
-      .catch(err => console.log('[Service Worker v5] Registration skipped:', err));
+      .then(reg => console.log('[Service Worker v6] Registered successfully:', reg.scope))
+      .catch(err => console.log('[Service Worker v6] Registration skipped:', err));
   }
 
   // --- DOM 元素引用 ---
@@ -294,7 +294,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function runMultiEngineOCR(imageSource) {
     ocrProgressBox.style.display = 'block';
-    ocrStatusText.textContent = '🚀 正在啟動高精度數據與三大戰場 OCR 分析...';
+    ocrStatusText.textContent = '🚀 分析處理中...';
     ocrPercentText.textContent = '0%';
     ocrProgressBar.style.width = '0%';
 
@@ -310,7 +310,7 @@ document.addEventListener('DOMContentLoaded', () => {
         logger: m => {
           if (m.status === 'recognizing text') {
             const progress = Math.round(m.progress * 50);
-            ocrStatusText.textContent = `🔍 正在精確辨識 4 列數據... (${progress}%)`;
+            ocrStatusText.textContent = `🔍 辨識數據中... (${progress}%)`;
             ocrPercentText.textContent = `${progress}%`;
             ocrProgressBar.style.width = `${progress}%`;
           }
@@ -327,7 +327,7 @@ document.addEventListener('DOMContentLoaded', () => {
         logger: m => {
           if (m.status === 'recognizing text') {
             const progress = 50 + Math.round(m.progress * 50);
-            ocrStatusText.textContent = `🔍 正在解析右上角戰場資訊... (${progress}%)`;
+            ocrStatusText.textContent = `🔍 解析戰場資訊... (${progress}%)`;
             ocrPercentText.textContent = `${progress}%`;
             ocrProgressBar.style.width = `${progress}%`;
           }
@@ -358,13 +358,13 @@ document.addEventListener('DOMContentLoaded', () => {
       // 僅依據 numText (數據視窗專用 Canvas) 進行精確行與數量級帶入
       parseStrictStatsWindowText(numText, rawText);
 
-      ocrStatusText.textContent = '✅ OCR 精確對應完成！戰場名稱、時間、殺怪、楓幣與經驗值已正確帶入';
+      ocrStatusText.textContent = '✅ 數據與戰場辨識完成';
       ocrPercentText.textContent = '100%';
       ocrProgressBar.style.width = '100%';
 
     } catch (err) {
       console.error('OCR Error:', err);
-      ocrStatusText.textContent = '⚠️ 辨識完成！數據可直接點擊輸入框手動修正';
+      ocrStatusText.textContent = '⚠️ 請確認手動修正數據';
     }
   }
 
