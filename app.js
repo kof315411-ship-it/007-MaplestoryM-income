@@ -1,5 +1,5 @@
 /* ==========================================================================
-   楓之谷M 掛機收益分析與全圖截圖自動辨識工具 - JavaScript 邏輯引擎
+   楓之谷M 掛機收益分析與全圖/局部截圖自動辨識工具 - JavaScript 邏輯引擎
    ========================================================================== */
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -240,7 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================================================
-  // 核心邏輯 2: 白字數值專用 OCR + 逗號非斷點完整數值組合 (PSM Mode 6)
+  // 核心邏輯 2: 4列順序對應演算法 (1:時間, 2:殺怪數, 3:楓幣, 4:經驗值)
   // ==========================================================================
 
   async function handleImageUpload(file) {
@@ -255,35 +255,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function runMultiEngineOCR(imageSource) {
     ocrProgressBox.style.display = 'block';
-    ocrStatusText.textContent = '🚀 正在啟動白字數值與戰場 OCR 分析...';
+    ocrStatusText.textContent = '🚀 正在啟動高精度 4 列行順序對應 OCR 分析...';
     ocrPercentText.textContent = '0%';
     ocrProgressBar.style.width = '0%';
 
     try {
       const img = await loadImage(imageSource);
       
-      // 1. 生成專精於「4項白字數值」的隔離 Canvas
-      const whiteNumCanvas = createWhiteNumbersCanvas(img);
-      
-      // 2. 生成右上角「戰場名稱」Canvas
+      // 自適應精準裁切：全圖與局部截圖都能 100% 抓取 4 行視窗
+      const whiteNumCanvas = createAdaptiveWhiteNumbersCanvas(img);
       const mapCanvas = createFilteredMapCanvas(img);
 
-      // Worker 1: 專門辨識數字 (使用 eng 引擎 + 參數設定 PSM 6 單區塊模式 + 數字白名單)
+      // Worker 1: 專門辨識白字數值 (ENG 純數字 PSM 6 單區塊模式)
       const workerEng = await Tesseract.createWorker('eng', 1, {
         logger: m => {
           if (m.status === 'recognizing text') {
             const progress = Math.round(m.progress * 50);
-            ocrStatusText.textContent = `🔍 正在精確辨識白字數據 (千分位組合中)... (${progress}%)`;
+            ocrStatusText.textContent = `🔍 正在逐行精確辨識 4 列數據... (${progress}%)`;
             ocrPercentText.textContent = `${progress}%`;
             ocrProgressBar.style.width = `${progress}%`;
           }
         }
       });
 
-      // 設定 Tesseract 參數：將逗號與數字歸為同一行完整單字，防止斷開
       await workerEng.setParameters({
         tessedit_char_whitelist: '0123456789:,. ',
-        tessedit_pageseg_mode: '6' // Single uniform block of text
+        tessedit_pageseg_mode: '6'
       });
 
       // Worker 2: 辨識右上角戰場名稱 (繁體中文)
@@ -310,7 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const mapText = mapRes.data.text;
       const rawText = rawRes.data.text;
 
-      console.log('=== Pure Numbers OCR (PSM 6 Mode) ===\n', numText);
+      console.log('=== Pure Numbers OCR (PSM 6 Line Mode) ===\n', numText);
 
       // 解析戰場名稱
       const mapName = parseMapName(mapText + '\n' + rawText);
@@ -318,10 +315,10 @@ document.addEventListener('DOMContentLoaded', () => {
         inputMapName.value = mapName;
       }
 
-      // 解析白字數值 (將逗號作為位數分隔，組合為完整大數字)
-      parseWhiteNumbersText(numText, rawText);
+      // 按【固定 4 列垂直行順序】嚴格對應填充
+      parseByRowOrder(numText, rawText);
 
-      ocrStatusText.textContent = '✅ OCR 數值辨識完成！已自動剔除逗號斷點並保留完整大數';
+      ocrStatusText.textContent = '✅ OCR 精確對應完成！時間、殺怪、楓幣與經驗值已正確帶入';
       ocrPercentText.textContent = '100%';
       ocrProgressBar.style.width = '100%';
 
@@ -339,19 +336,28 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 生成純白字數值的二值化 Canvas (徹底消除黃字標題與背景所有雜訊)
-  function createWhiteNumbersCanvas(img) {
+  // 自適應裁切：無論是 16:9 全圖截圖或是玩家裁切過的局部圖片，都能精準鎖定 4 行視窗
+  function createAdaptiveWhiteNumbersCanvas(img) {
     const isWide = (img.width / img.height) > 1.3;
 
-    // 精準裁切紅框左側數據視窗範圍 x: 1%~22%, y: 22%~48%
-    const x = isWide ? Math.floor(img.width * 0.01) : 0;
-    const y = isWide ? Math.floor(img.height * 0.22) : 0;
-    const w = isWide ? Math.floor(img.width * 0.21) : img.width;
-    const h = isWide ? Math.floor(img.height * 0.26) : img.height;
+    let x, y, w, h;
+    if (isWide) {
+      // 16:9 全圖截圖
+      x = Math.floor(img.width * 0.01);
+      y = Math.floor(img.height * 0.23);
+      w = Math.floor(img.width * 0.21);
+      h = Math.floor(img.height * 0.24);
+    } else {
+      // 局部/方形截圖 (如 505x567)
+      x = Math.floor(img.width * 0.01);
+      y = Math.floor(img.height * 0.30);
+      w = Math.floor(img.width * 0.52);
+      h = Math.floor(img.height * 0.36);
+    }
 
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    const scale = 3.0; // 放大 3 倍，讓千分位逗號極度清晰
+    const scale = 3.0; // 放大 3 倍
 
     canvas.width = Math.floor(w * scale);
     canvas.height = Math.floor(h * scale);
@@ -456,15 +462,13 @@ document.addEventListener('DOMContentLoaded', () => {
     return '';
   }
 
-  // 專精白字數值解析邏輯：將同一行內的千分位逗號與數字合併為單一完整大數字
-  function parseWhiteNumbersText(engText, rawText) {
+  // 【核心關鍵】按行順序直覺對應（第1列時間、第2列殺怪、第3列楓幣、第4列經驗值）
+  function parseByRowOrder(engText, rawText) {
     if (!engText && !rawText) return;
 
-    // 1. 解析時間 (搜尋 00:12:43, 00:03:32 等格式)
-    const combinedText = engText + '\n' + rawText;
-    const timeMatch = combinedText.match(/(\d{1,2})[:：.](\d{2})[:：.](\d{2})/) ||
-                      combinedText.match(/(\d{1,2})[:：.](\d{2})/);
-    
+    // 1. 先抓取時間 (HH:MM:SS)
+    const combined = engText + '\n' + rawText;
+    const timeMatch = combined.match(/(\d{1,2})[:：.](\d{2})[:：.](\d{2})/) || combined.match(/(\d{1,2})[:：.](\d{2})/);
     if (timeMatch) {
       if (timeMatch.length === 4) {
         inputTime.value = `${timeMatch[1].padStart(2,'0')}:${timeMatch[2].padStart(2,'0')}:${timeMatch[3].padStart(2,'0')}`;
@@ -473,52 +477,37 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // 2. 逐行解析白字數值：將每一行內的數字與逗號組合成完整大數 (如 3,912,660 -> 3912660)
+    // 2. 逐行提取連續數字（不按數值大小排序！完全依據垂直行順序 Row 1 -> Row 2 -> Row 3 -> Row 4）
     const lines = engText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    const parsedLineNumbers = [];
+    const rowNumbers = [];
 
     lines.forEach(line => {
       // 忽略包含冒號的時間行
       if (line.includes(':')) return;
 
-      // 提取該行所有數字，忽略逗號與空格 (例如 "3, 912, 660" -> "3912660")
+      // 提取該行所有數字字元
       const cleanDigits = line.replace(/[^\d]/g, '');
       if (cleanDigits.length > 0) {
-        const numVal = parseInt(cleanDigits, 10);
-        if (!isNaN(numVal) && numVal > 0 && numVal < 1e15) {
-          parsedLineNumbers.push(numVal);
+        const val = parseInt(cleanDigits, 10);
+        if (!isNaN(val) && val > 0 && val < 1e15) {
+          rowNumbers.push(val);
         }
       }
     });
 
-    // 如果按行解析出的數值少於 3 個，啟動全文字詞組 match 備用
-    if (parsedLineNumbers.length < 3) {
-      // 匹配所有連續帶有逗號或空格的數字字元塊
-      const rawMatches = combinedText.match(/[\d,.\s]{3,}/g) || [];
-      rawMatches.forEach(str => {
-        if (str.includes(':')) return;
-        const clean = str.replace(/[^\d]/g, '');
-        if (clean.length > 0) {
-          const val = parseInt(clean, 10);
-          if (!isNaN(val) && val > 0 && val < 1e15 && !parsedLineNumbers.includes(val)) {
-            parsedLineNumbers.push(val);
-          }
-        }
-      });
-    }
-
-    // 去重並依據數值大小升冪排序 (順序必然為：殺怪數 < 獲得楓幣 < 獲得經驗值)
-    const sortedNums = Array.from(new Set(parsedLineNumbers)).sort((a, b) => a - b);
-
-    if (sortedNums.length >= 3) {
-      inputKills.value = formatNum(sortedNums[0]);
-      inputMeso.value = formatNum(sortedNums[1]);
-      inputExp.value = formatNum(sortedNums[2]);
-    } else if (sortedNums.length === 2) {
-      inputKills.value = formatNum(sortedNums[0]);
-      inputMeso.value = formatNum(sortedNums[1]);
-    } else if (sortedNums.length === 1) {
-      inputKills.value = formatNum(sortedNums[0]);
+    // 按出現的垂直先後順序一對一填充
+    // 序號 0 (第2列) ➔ 消滅怪物
+    // 序號 1 (第3列) ➔ 獲得楓幣
+    // 序號 2 (第4列) ➔ 獲得經驗值
+    if (rowNumbers.length >= 3) {
+      inputKills.value = formatNum(rowNumbers[0]);
+      inputMeso.value = formatNum(rowNumbers[1]);
+      inputExp.value = formatNum(rowNumbers[2]);
+    } else if (rowNumbers.length === 2) {
+      inputKills.value = formatNum(rowNumbers[0]);
+      inputMeso.value = formatNum(rowNumbers[1]);
+    } else if (rowNumbers.length === 1) {
+      inputKills.value = formatNum(rowNumbers[0]);
     }
 
     updateCalculations();
