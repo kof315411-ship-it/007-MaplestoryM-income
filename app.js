@@ -6,8 +6,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- 註冊 Service Worker 實現跨裝置 PWA 離線支援 ---
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js')
-      .then(reg => console.log('[Service Worker v3] Registered successfully:', reg.scope))
-      .catch(err => console.log('[Service Worker v3] Registration skipped:', err));
+      .then(reg => console.log('[Service Worker v4] Registered successfully:', reg.scope))
+      .catch(err => console.log('[Service Worker v4] Registration skipped:', err));
   }
 
   // --- DOM 元素引用 ---
@@ -279,7 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================================================
-  // 核心邏輯 2: 雙重保險對應演算法 (數量級範圍匹配 + 100% 涵蓋進行時間與殺怪數)
+  // 核心邏輯 2: 純白字數據視窗對應 (嚴格排除頂部戰力與活動徽章)
   // ==========================================================================
 
   async function handleImageUpload(file) {
@@ -301,7 +301,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const img = await loadImage(imageSource);
       
-      // 100% 完整涵蓋進行時間與殺怪數視窗
+      // 100% 獨立隔離左側 4 行數據視窗 (完全不混入頂部戰力與徽章)
       const whiteNumCanvas = createAdaptiveWhiteNumbersCanvas(img);
       const mapCanvas = createFilteredMapCanvas(img);
 
@@ -346,7 +346,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const mapText = mapRes.data.text;
       const rawText = rawRes.data.text;
 
-      console.log('=== Pure Numbers OCR ===\n', numText);
+      console.log('=== Pure Numbers OCR (Stats Box Only) ===\n', numText);
 
       // 解析戰場名稱
       const mapName = parseMapName(mapText + '\n' + rawText);
@@ -354,8 +354,8 @@ document.addEventListener('DOMContentLoaded', () => {
         inputMapName.value = mapName;
       }
 
-      // 執行雙重保險對應：數量級範圍匹配 + 行順序
-      parseRobustMapleValues(numText, rawText);
+      // 僅依據 numText (數據視窗專用 Canvas) 進行精確行與數量級帶入
+      parseStrictStatsWindowText(numText, rawText);
 
       ocrStatusText.textContent = '✅ OCR 精確對應完成！時間、殺怪、楓幣與經驗值已正確帶入';
       ocrPercentText.textContent = '100%';
@@ -375,23 +375,23 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 100% 完整捕捉進行時間與殺怪數量 (y: 18% ~ 48%)
+  // 精確裁切數據視窗：避開頂部 ⚔️ 6,001,975 戰力與 D-32 徽章
   function createAdaptiveWhiteNumbersCanvas(img) {
     const isWide = (img.width / img.height) > 1.3;
 
     let x, y, w, h;
     if (isWide) {
-      // 16:9 全圖截圖：從 y:18% 開始裁切，完美捕捉進行時間與殺怪數量
+      // 16:9 全圖截圖：y 上緣特別下移避開頂部角色戰力與 D-32
       x = Math.floor(img.width * 0.01);
-      y = Math.floor(img.height * 0.18);
+      y = Math.floor(img.height * 0.24);
       w = Math.floor(img.width * 0.22);
-      h = Math.floor(img.height * 0.30);
+      h = Math.floor(img.height * 0.23);
     } else {
-      // 局部/方形截圖
+      // 局部/方形截圖 (如 370x427)
       x = Math.floor(img.width * 0.01);
-      y = Math.floor(img.height * 0.25);
-      w = Math.floor(img.width * 0.55);
-      h = Math.floor(img.height * 0.45);
+      y = Math.floor(img.height * 0.36);
+      w = Math.floor(img.width * 0.58);
+      h = Math.floor(img.height * 0.35);
     }
 
     const canvas = document.createElement('canvas');
@@ -501,8 +501,8 @@ document.addEventListener('DOMContentLoaded', () => {
     return '';
   }
 
-  // 雙重保險對應演算法：數量級範圍匹配 + 行順序
-  function parseRobustMapleValues(engText, rawText) {
+  // 專精掛機數據視窗解析：完全排除全圖頂部戰力干擾
+  function parseStrictStatsWindowText(engText, rawText) {
     if (!engText && !rawText) return;
 
     // 1. 先抓取時間 (HH:MM:SS)
@@ -516,9 +516,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // 2. 收集所有純數字
-    const lines = combined.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    const extractedNums = [];
+    // 2. 僅從 engText (掛機數據視窗) 提取數字，絕不從 rawText 抓取頂部戰力！
+    const lines = engText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    const windowNums = [];
 
     lines.forEach(line => {
       if (line.includes(':')) return;
@@ -526,28 +526,24 @@ document.addEventListener('DOMContentLoaded', () => {
       if (cleanDigits.length > 0) {
         const val = parseInt(cleanDigits, 10);
         if (!isNaN(val) && val > 0 && val < 1e15) {
-          extractedNums.push(val);
+          // 過濾單雙位數的徽章圖示雜訊
+          if (val <= 50 && windowNums.length === 0) return;
+          windowNums.push(val);
         }
       }
     });
 
-    const uniqueNums = Array.from(new Set(extractedNums));
+    // 3. 雙重分配邏輯：優先按【數量級】鎖定，防止頂部任何殘留雜訊
+    let foundKills = windowNums.find(n => n >= 50 && n < 500000);
+    let foundMeso = windowNums.find(n => n >= 500000 && n < 500000000);
+    let foundExp = windowNums.find(n => n >= 500000000);
 
-    // 3. 數量級分組匹配 (楓之谷M 數據特徵)：
-    // - 殺怪數 (Kills): < 500,000 (通常在 100 ~ 100,000)
-    // - 楓幣 (Meso):   500,000 ~ 500,000,000 (百萬 ~ 億)
-    // - 經驗值 (EXP):  >= 500,000,000 (十億 ~ 兆)
-    let foundKills = uniqueNums.find(n => n >= 50 && n < 500000);
-    let foundMeso = uniqueNums.find(n => n >= 500000 && n < 500000000);
-    let foundExp = uniqueNums.find(n => n >= 500000000);
-
-    // 如果分組沒抓全，使用排序備用方案
+    // 備用方案：如果數量級沒齊全，按數據視窗內部出現順序 1:殺怪 2:楓幣 3:經驗
     if (!foundKills || !foundMeso || !foundExp) {
-      const sorted = uniqueNums.sort((a, b) => a - b);
-      if (sorted.length >= 3) {
-        foundKills = foundKills || sorted[0];
-        foundMeso = foundMeso || sorted[1];
-        foundExp = foundExp || sorted[2];
+      if (windowNums.length >= 3) {
+        foundKills = foundKills || windowNums[0];
+        foundMeso = foundMeso || windowNums[1];
+        foundExp = foundExp || windowNums[2];
       }
     }
 
