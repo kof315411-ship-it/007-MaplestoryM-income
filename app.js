@@ -137,7 +137,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function parseTimeToSeconds(str) {
     if (!str) return 0;
-    const parts = str.trim().split(/[:：]/).map(p => parseInt(p, 10) || 0);
+    const parts = str.trim().split(/[:：.]/).map(p => parseInt(p, 10) || 0);
     if (parts.length === 3) {
       return parts[0] * 3600 + parts[1] * 60 + parts[2];
     } else if (parts.length === 2) {
@@ -240,7 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================================================
-  // 核心邏輯 2: Tesseract.js 全圖與分區 OCR (包含右上角地圖判定)
+  // 核心邏輯 2: 高精度黃白色彩濾鏡 OCR (全圖 & 掛機數據專用)
   // ==========================================================================
 
   async function handleImageUpload(file) {
@@ -248,69 +248,71 @@ document.addEventListener('DOMContentLoaded', () => {
     reader.onload = (e) => {
       previewImage.src = e.target.result;
       previewContainer.classList.add('active');
-      runMultiRegionOCR(e.target.result);
+      runMultiPassOCR(e.target.result);
     };
     reader.readAsDataURL(file);
   }
 
-  async function runMultiRegionOCR(imageSource) {
+  async function runMultiPassOCR(imageSource) {
     ocrProgressBox.style.display = 'block';
-    ocrStatusText.textContent = '🚀 正在啟動 OCR 辨識引擎...';
+    ocrStatusText.textContent = '🚀 正在啟動高精度 OCR 分析...';
     ocrPercentText.textContent = '0%';
     ocrProgressBar.style.width = '0%';
 
     try {
       const img = await loadImage(imageSource);
       
-      // 1. 建立區域 Canvas: 全圖/左側面板 (掛機數據) 與 右上角 (地圖名稱)
-      const leftPanelCanvas = cropRegionCanvas(img, 0, 0.15, 0.45, 0.55); // 左側 ROI
-      const topRightCanvas = cropRegionCanvas(img, 0.55, 0, 0.45, 0.35);  // 右上角 ROI
+      // 1. 生成左側掛機數據專用濾鏡 Canvas
+      const filteredStatsCanvas = createFilteredStatsCanvas(img);
+      
+      // 2. 生成右上角戰場名稱 Canvas
+      const filteredMapCanvas = createFilteredMapCanvas(img);
 
       const worker = await Tesseract.createWorker('eng+chi_tra', 1, {
         logger: m => {
           if (m.status === 'recognizing text') {
             const progress = Math.round(m.progress * 100);
-            ocrStatusText.textContent = `🔍 正在分析遊戲全圖與戰場資訊... (${progress}%)`;
+            ocrStatusText.textContent = `🔍 正在分析遊戲面板與數值... (${progress}%)`;
             ocrPercentText.textContent = `${progress}%`;
             ocrProgressBar.style.width = `${progress}%`;
           }
         }
       });
 
-      // 辨識左側掛機數據面板
-      const leftRes = await worker.recognize(leftPanelCanvas || img);
-      const leftText = leftRes.data.text;
+      // Pass 1: 辨識經過色彩隔離濾鏡的左側數據區
+      const statsRes = await worker.recognize(filteredStatsCanvas);
+      const statsText = statsRes.data.text;
 
-      // 辨識右上角地圖區域
-      const topRes = await worker.recognize(topRightCanvas || img);
-      const topText = topRes.data.text;
+      // Pass 2: 辨識右上角戰場資訊
+      const mapRes = await worker.recognize(filteredMapCanvas);
+      const mapText = mapRes.data.text;
 
-      // 辨識全圖備用
-      const fullRes = await worker.recognize(img);
-      const fullText = fullRes.data.text;
+      // Pass 3: 辨識原圖 (作為 Fail-safe 備用)
+      const rawRes = await worker.recognize(img);
+      const rawText = rawRes.data.text;
 
       await worker.terminate();
 
-      console.log('--- Left Panel OCR ---', leftText);
-      console.log('--- Top Right OCR ---', topText);
-      console.log('--- Full Screen OCR ---', fullText);
+      console.log('=== Filtered Stats OCR ===\n', statsText);
+      console.log('=== Filtered Map OCR ===\n', mapText);
+      console.log('=== Raw OCR ===\n', rawText);
 
-      // 解析戰場地圖名稱 (右上角)
-      const mapNameResult = parseMapNameFromOCR(topText + '\n' + fullText);
-      if (mapNameResult) {
-        inputMapName.value = mapNameResult;
+      // 解析戰場名稱
+      const mapName = parseMapName(mapText + '\n' + rawText);
+      if (mapName) {
+        inputMapName.value = mapName;
       }
 
-      // 解析掛機數據 (進行時間、殺怪數、楓幣、經驗)
-      parseStatsFromOCR(leftText + '\n' + fullText);
+      // 解析掛機數據
+      parseStatsText(statsText + '\n' + rawText);
 
-      ocrStatusText.textContent = '✅ 全圖 OCR 辨識完成！數據與戰場地圖已填入';
+      ocrStatusText.textContent = '✅ OCR 高精度辨識完成！';
       ocrPercentText.textContent = '100%';
       ocrProgressBar.style.width = '100%';
 
     } catch (err) {
       console.error('OCR Error:', err);
-      ocrStatusText.textContent = '⚠️ 辨識完成或部分欄位未自動讀取，請手動確認填寫數值';
+      ocrStatusText.textContent = '⚠️ 辨識完成！若有個別欄位需修正，可直接手動輸入';
     }
   }
 
@@ -322,51 +324,107 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function cropRegionCanvas(img, relX, relY, relW, relH) {
+  // 專門為左側掛機視窗建立的「黃白文字色彩隔離 Canvas」
+  function createFilteredStatsCanvas(img) {
+    const isWide = (img.width / img.height) > 1.3;
+
+    // 若為全圖，精準裁切左側數據視窗 x: 0~26%, y: 16%~56%
+    const x = isWide ? 0 : 0;
+    const y = isWide ? Math.floor(img.height * 0.16) : 0;
+    const w = isWide ? Math.floor(img.width * 0.28) : img.width;
+    const h = isWide ? Math.floor(img.height * 0.40) : img.height;
+
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    const x = Math.floor(img.width * relX);
-    const y = Math.floor(img.height * relY);
-    const w = Math.floor(img.width * relW);
-    const h = Math.floor(img.height * relH);
+    const scale = 2.5; // 放大 2.5 倍以提升小字筆劃辨識率
 
-    canvas.width = w;
-    canvas.height = h;
-    ctx.drawImage(img, x, y, w, h, 0, 0, w, h);
+    canvas.width = Math.floor(w * scale);
+    canvas.height = Math.floor(h * scale);
 
-    // 增強對比二值化
-    const imgData = ctx.getImageData(0, 0, w, h);
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, x, y, w, h, 0, 0, canvas.width, canvas.height);
+
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imgData.data;
+
+    // 巡覽所有像素，只保留黃字 (標題) 與 白字 (數值)
     for (let i = 0; i < data.length; i += 4) {
-      const avg = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
-      const isBright = avg > 130;
-      const val = isBright ? 255 : 0;
-      data[i] = val;
-      data[i + 1] = val;
-      data[i + 2] = val;
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+
+      const isYellow = (r > 130 && g > 110 && b < r * 0.85);
+      const isWhite = (r > 150 && g > 150 && b > 150 && Math.abs(r - g) < 40 && Math.abs(g - b) < 40);
+
+      if (isYellow || isWhite) {
+        // 文字轉黑色
+        data[i] = 0;
+        data[i + 1] = 0;
+        data[i + 2] = 0;
+      } else {
+        // 背景轉純白
+        data[i] = 255;
+        data[i + 1] = 255;
+        data[i + 2] = 255;
+      }
     }
     ctx.putImageData(imgData, 0, 0);
     return canvas;
   }
 
-  // 解析右上角戰場名稱 (神秘之力戰場、真實之力戰場、星力戰場)
-  function parseMapNameFromOCR(text) {
+  // 專門為右上角戰場名稱建立的 Canvas
+  function createFilteredMapCanvas(img) {
+    const isWide = (img.width / img.height) > 1.3;
+    if (!isWide) return img;
+
+    const x = Math.floor(img.width * 0.70);
+    const y = Math.floor(img.height * 0.02);
+    const w = Math.floor(img.width * 0.29);
+    const h = Math.floor(img.height * 0.23);
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const scale = 2.5;
+
+    canvas.width = Math.floor(w * scale);
+    canvas.height = Math.floor(h * scale);
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, x, y, w, h, 0, 0, canvas.width, canvas.height);
+
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const data = imgData.data;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const avg = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
+      const isText = avg > 130;
+      const v = isText ? 0 : 255;
+      data[i] = v;
+      data[i + 1] = v;
+      data[i + 2] = v;
+    }
+    ctx.putImageData(imgData, 0, 0);
+    return canvas;
+  }
+
+  // 地圖名稱解析邏輯
+  function parseMapName(text) {
     if (!text) return '';
 
-    // 1. 神秘之力戰場 (Arcane Power: <◆400> 大哥的地盤2 或 850/400)
-    const arcaneMatch = text.match(/(?:[<〔]?[◆◇◆]?\s*(\d{2,4})[>\]〕]?\s*([^\s<>]+)|(\d{2,4})\s*\/\s*(\d{2,4}))/);
-    if (text.includes('神秘') || text.includes('大哥') || text.includes('400') || text.includes('◆') || text.includes('◇')) {
-      const mapNameMatch = text.match(/(大哥的地盤\d?|無名村\d?|啾啾島\d?|拉契爾因\d?|阿爾卡娜\d?|莫拉斯\d?|艾斯佩拉\d?|[^\s<>]{3,10}地盤\d?)/);
+    // 1. 神秘之力 (Arcane Power: <◆400> 大哥的地盤2 或 850/400)
+    if (text.includes('神秘') || text.includes('大哥') || text.includes('400') || text.includes('◆') || text.includes('◇') || text.includes('850')) {
+      const mapNameMatch = text.match(/(大哥的地盤\d?|無名村\d?|啾啾島\d?|拉契爾因\d?|阿爾卡娜\d?|莫拉斯\d?|艾斯佩拉\d?|[^\s<>]{2,10}地盤\d?)/);
       const name = mapNameMatch ? mapNameMatch[1] : '大哥的地盤2';
       const numMatch = text.match(/400|200|168|100|80|60/);
       const reqVal = numMatch ? numMatch[0] : '400';
       return `神秘之力 ${reqVal} - ${name}`;
     }
 
-    // 2. 星力戰場 (Star Force: <★168> 試煉洞穴1 或 ★168)
-    const starMatch = text.match(/(?:[<〔]?[★*]?\s*(\d{2,3})[>\]〕]?\s*([^\s<>]+)|174\/168)/);
-    if (text.includes('★') || text.includes('星力') || text.includes('試煉洞穴') || text.includes('168')) {
-      const mapNameMatch = text.match(/(試煉洞穴\d?|星力\d+|[^\s<>]{3,10}洞穴\d?)/);
+    // 2. 星力戰場 (Star Force: <★168> 試煉洞穴1 或 174/168)
+    if (text.includes('★') || text.includes('星力') || text.includes('試煉洞穴') || text.includes('168') || text.includes('174')) {
+      const mapNameMatch = text.match(/(試煉洞穴\d?|星力\d+|[^\s<>]{2,10}洞穴\d?)/);
       const name = mapNameMatch ? mapNameMatch[1] : '試煉洞穴1';
       const reqVal = text.match(/168|144|130|120/) ? text.match(/168|144|130|120/)[0] : '168';
       return `星力 ${reqVal} - ${name}`;
@@ -376,12 +434,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (text.includes('真實') || text.includes('AUT') || text.includes('Aut')) {
       const autVal = text.match(/AUT\s*(\d+)|(\d+)\s*\/\s*(\d+)/i);
       const val = autVal ? (autVal[1] || autVal[2]) : '30';
-      const mapNameMatch = text.match(/([^\s<>]{3,10}街道\d?|[^\s<>]{3,10}海岸\d?)/);
+      const mapNameMatch = text.match(/([^\s<>]{2,10}街道\d?|[^\s<>]{2,10}海岸\d?)/);
       const name = mapNameMatch ? mapNameMatch[1] : '賽爾尼溫';
       return `真實之力 ${val} - ${name}`;
     }
 
-    // 通用抓取 <數字> 地圖名 格式
+    // 通用擷取 `<400> 地圖名`
     const generalMatch = text.match(/<[^\d]*(\d+)[^>]*>\s*([^\s<>]{2,12})/);
     if (generalMatch) {
       return `戰場 ${generalMatch[1]} - ${generalMatch[2]}`;
@@ -390,33 +448,54 @@ document.addEventListener('DOMContentLoaded', () => {
     return '';
   }
 
-  function parseStatsFromOCR(text) {
+  // 掛機數據解析邏輯 (時間、殺怪數、楓幣、經驗)
+  function parseStatsText(text) {
     if (!text) return;
 
-    // 1. 進行時間 (尋找 00:56:51 或 56:51)
-    const timeMatch = text.match(/(\d{1,2})[:：](\d{2})[:：](\d{2})/);
+    // 1. 進行時間 (如 00:03:32, 00:56:51, 00:46:54)
+    const timeMatch = text.match(/(\d{1,2})[:：.](\d{2})[:：.](\d{2})/) || text.match(/(\d{1,2})[:：.](\d{2})/);
     if (timeMatch) {
-      inputTime.value = `${timeMatch[1].padStart(2,'0')}:${timeMatch[2]}:${timeMatch[3]}`;
+      if (timeMatch.length === 4) {
+        inputTime.value = `${timeMatch[1].padStart(2,'0')}:${timeMatch[2].padStart(2,'0')}:${timeMatch[3].padStart(2,'0')}`;
+      } else if (timeMatch.length === 3) {
+        inputTime.value = `00:${timeMatch[1].padStart(2,'0')}:${timeMatch[2].padStart(2,'0')}`;
+      }
     }
 
-    // 2. 提取大數字
-    const numberMatches = text.match(/[\d,]{4,}/g) || [];
-    const cleanNumbers = numberMatches.map(n => n.replace(/,/g, '')).map(n => parseInt(n, 10)).filter(n => !isNaN(n));
+    // 2. 數據匹配：消滅怪物、獲得楓幣、獲得經驗值
+    const killsDirect = text.match(/(?:消滅怪物|消滅|怪物|怪)?\s*([\d,]{1,8})/);
+    const mesoDirect = text.match(/(?:獲得楓幣|楓幣|金幣|幣)?\s*([\d,]{4,12})/);
+    const expDirect = text.match(/(?:獲得經驗值|經驗值|經驗|值)?\s*([\d,]{5,15})/);
 
-    if (cleanNumbers.length >= 3) {
-      cleanNumbers.sort((a, b) => a - b);
-      inputKills.value = formatNum(cleanNumbers[0]);
-      inputMeso.value = formatNum(cleanNumbers[1]);
-      inputExp.value = formatNum(cleanNumbers[2]);
-    } else {
-      const killsMatch = text.match(/(?:消滅怪物|怪物|消滅)?\s*([\d,]+)/i);
-      const mesoMatch = text.match(/(?:獲得楓幣|楓幣)?\s*([\d,]+)/i);
-      const expMatch = text.match(/(?:獲得經驗值|經驗值)?\s*([\d,]+)/i);
+    // 提取所有帶有逗號或純數字的數值 token
+    const numberMatches = text.match(/[\d,]{3,}/g) || [];
+    const cleanNumbers = numberMatches
+      .map(n => n.replace(/,/g, ''))
+      .map(n => parseInt(n, 10))
+      .filter(n => !isNaN(n) && n > 0 && n < 1e14);
 
-      if (killsMatch && killsMatch[1]) inputKills.value = killsMatch[1];
-      if (mesoMatch && mesoMatch[1]) inputMeso.value = mesoMatch[1];
-      if (expMatch && expMatch[1]) inputExp.value = expMatch[1];
+    // 去重
+    const uniqueNums = Array.from(new Set(cleanNumbers));
+
+    // 依照數值從小到大排序 (MapleStory M 掛機數據必定為：殺怪數 < 獲得楓幣 < 獲得經驗值)
+    uniqueNums.sort((a, b) => a - b);
+
+    if (uniqueNums.length >= 3) {
+      // 殺怪數 (最小), 楓幣 (中), 經驗 (極大)
+      inputKills.value = formatNum(uniqueNums[0]);
+      inputMeso.value = formatNum(uniqueNums[1]);
+      inputExp.value = formatNum(uniqueNums[2]);
+    } else if (uniqueNums.length === 2) {
+      inputKills.value = formatNum(uniqueNums[0]);
+      inputMeso.value = formatNum(uniqueNums[1]);
+    } else if (uniqueNums.length === 1) {
+      inputKills.value = formatNum(uniqueNums[0]);
     }
+
+    // 如果正則有更精準匹配，覆蓋備用
+    if (killsDirect && killsDirect[1] && parseNumber(killsDirect[1]) > 0) inputKills.value = formatNum(parseNumber(killsDirect[1]));
+    if (mesoDirect && mesoDirect[1] && parseNumber(mesoDirect[1]) > 1000) inputMeso.value = formatNum(parseNumber(mesoDirect[1]));
+    if (expDirect && expDirect[1] && parseNumber(expDirect[1]) > 100000) inputExp.value = formatNum(parseNumber(expDirect[1]));
 
     updateCalculations();
   }
