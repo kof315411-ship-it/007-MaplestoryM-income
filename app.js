@@ -240,7 +240,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================================================
-  // 核心邏輯 2: 白字數值專用 OCR + 雙引擎 (數字專用 ENG 模式 100% 精準)
+  // 核心邏輯 2: 白字數值專用 OCR + 逗號非斷點完整數值組合 (PSM Mode 6)
   // ==========================================================================
 
   async function handleImageUpload(file) {
@@ -255,7 +255,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function runMultiEngineOCR(imageSource) {
     ocrProgressBox.style.display = 'block';
-    ocrStatusText.textContent = '🚀 正在啟動高精度數字與戰場 OCR 分析...';
+    ocrStatusText.textContent = '🚀 正在啟動白字數值與戰場 OCR 分析...';
     ocrPercentText.textContent = '0%';
     ocrProgressBar.style.width = '0%';
 
@@ -268,16 +268,22 @@ document.addEventListener('DOMContentLoaded', () => {
       // 2. 生成右上角「戰場名稱」Canvas
       const mapCanvas = createFilteredMapCanvas(img);
 
-      // Worker 1: 專門辨識數字 (使用 eng 引擎，純數字+點冒號標點符號白名單，零中文誤判)
+      // Worker 1: 專門辨識數字 (使用 eng 引擎 + 參數設定 PSM 6 單區塊模式 + 數字白名單)
       const workerEng = await Tesseract.createWorker('eng', 1, {
         logger: m => {
           if (m.status === 'recognizing text') {
             const progress = Math.round(m.progress * 50);
-            ocrStatusText.textContent = `🔍 正在精確辨識白字掛機數據... (${progress}%)`;
+            ocrStatusText.textContent = `🔍 正在精確辨識白字數據 (千分位組合中)... (${progress}%)`;
             ocrPercentText.textContent = `${progress}%`;
             ocrProgressBar.style.width = `${progress}%`;
           }
         }
+      });
+
+      // 設定 Tesseract 參數：將逗號與數字歸為同一行完整單字，防止斷開
+      await workerEng.setParameters({
+        tessedit_char_whitelist: '0123456789:,. ',
+        tessedit_pageseg_mode: '6' // Single uniform block of text
       });
 
       // Worker 2: 辨識右上角戰場名稱 (繁體中文)
@@ -304,8 +310,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const mapText = mapRes.data.text;
       const rawText = rawRes.data.text;
 
-      console.log('=== Pure Numbers OCR (ENG Mode) ===\n', numText);
-      console.log('=== Map OCR ===\n', mapText);
+      console.log('=== Pure Numbers OCR (PSM 6 Mode) ===\n', numText);
 
       // 解析戰場名稱
       const mapName = parseMapName(mapText + '\n' + rawText);
@@ -313,16 +318,16 @@ document.addEventListener('DOMContentLoaded', () => {
         inputMapName.value = mapName;
       }
 
-      // 解析白字掛機數據
+      // 解析白字數值 (將逗號作為位數分隔，組合為完整大數字)
       parseWhiteNumbersText(numText, rawText);
 
-      ocrStatusText.textContent = '✅ OCR 精確辨識完成！白字數據與戰場地圖已成功帶入';
+      ocrStatusText.textContent = '✅ OCR 數值辨識完成！已自動剔除逗號斷點並保留完整大數';
       ocrPercentText.textContent = '100%';
       ocrProgressBar.style.width = '100%';
 
     } catch (err) {
       console.error('OCR Error:', err);
-      ocrStatusText.textContent = '⚠️ 辨識完成！數據若有微調需求可直接點擊輸入框修正';
+      ocrStatusText.textContent = '⚠️ 辨識完成！數據可直接點擊輸入框手動修正';
     }
   }
 
@@ -346,7 +351,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
-    const scale = 3.0; // 放大 3 倍，使數字邊緣與逗號極度清晰
+    const scale = 3.0; // 放大 3 倍，讓千分位逗號極度清晰
 
     canvas.width = Math.floor(w * scale);
     canvas.height = Math.floor(h * scale);
@@ -367,12 +372,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const isWhiteText = (r > 150 && g > 150 && b > 150 && Math.abs(r - g) < 30 && Math.abs(g - b) < 30);
 
       if (isWhiteText) {
-        // 白字轉純黑
         data[i] = 0;
         data[i + 1] = 0;
         data[i + 2] = 0;
       } else {
-        // 黃字標題與背景全部轉純白
         data[i] = 255;
         data[i + 1] = 255;
         data[i + 2] = 255;
@@ -453,13 +456,14 @@ document.addEventListener('DOMContentLoaded', () => {
     return '';
   }
 
-  // 專精白字數值解析邏輯
+  // 專精白字數值解析邏輯：將同一行內的千分位逗號與數字合併為單一完整大數字
   function parseWhiteNumbersText(engText, rawText) {
     if (!engText && !rawText) return;
 
     // 1. 解析時間 (搜尋 00:12:43, 00:03:32 等格式)
-    const timeMatch = (engText + '\n' + rawText).match(/(\d{1,2})[:：.](\d{2})[:：.](\d{2})/) ||
-                      (engText + '\n' + rawText).match(/(\d{1,2})[:：.](\d{2})/);
+    const combinedText = engText + '\n' + rawText;
+    const timeMatch = combinedText.match(/(\d{1,2})[:：.](\d{2})[:：.](\d{2})/) ||
+                      combinedText.match(/(\d{1,2})[:：.](\d{2})/);
     
     if (timeMatch) {
       if (timeMatch.length === 4) {
@@ -469,35 +473,42 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // 2. 提取 ENG 模式下的純數字 (除時間外的數值)
+    // 2. 逐行解析白字數值：將每一行內的數字與逗號組合成完整大數 (如 3,912,660 -> 3912660)
     const lines = engText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    const pureNumbers = [];
+    const parsedLineNumbers = [];
 
     lines.forEach(line => {
       // 忽略包含冒號的時間行
       if (line.includes(':')) return;
 
-      const numStr = line.replace(/,/g, '').replace(/[^\d]/g, '');
-      const num = parseInt(numStr, 10);
-      if (!isNaN(num) && num > 0 && num < 1e14) {
-        pureNumbers.push(num);
+      // 提取該行所有數字，忽略逗號與空格 (例如 "3, 912, 660" -> "3912660")
+      const cleanDigits = line.replace(/[^\d]/g, '');
+      if (cleanDigits.length > 0) {
+        const numVal = parseInt(cleanDigits, 10);
+        if (!isNaN(numVal) && numVal > 0 && numVal < 1e15) {
+          parsedLineNumbers.push(numVal);
+        }
       }
     });
 
-    // 若純數值行小於 3，備用正則匹配 rawText
-    if (pureNumbers.length < 3) {
-      const allMatches = (engText + ' ' + rawText).match(/[\d,]{3,}/g) || [];
-      allMatches.forEach(str => {
+    // 如果按行解析出的數值少於 3 個，啟動全文字詞組 match 備用
+    if (parsedLineNumbers.length < 3) {
+      // 匹配所有連續帶有逗號或空格的數字字元塊
+      const rawMatches = combinedText.match(/[\d,.\s]{3,}/g) || [];
+      rawMatches.forEach(str => {
         if (str.includes(':')) return;
-        const n = parseInt(str.replace(/,/g, ''), 10);
-        if (!isNaN(n) && n > 0 && n < 1e14 && !pureNumbers.includes(n)) {
-          pureNumbers.push(n);
+        const clean = str.replace(/[^\d]/g, '');
+        if (clean.length > 0) {
+          const val = parseInt(clean, 10);
+          if (!isNaN(val) && val > 0 && val < 1e15 && !parsedLineNumbers.includes(val)) {
+            parsedLineNumbers.push(val);
+          }
         }
       });
     }
 
-    // 去重並升冪排序 (順序必然為：殺怪數 < 獲得楓幣 < 獲得經驗值)
-    const sortedNums = Array.from(new Set(pureNumbers)).sort((a, b) => a - b);
+    // 去重並依據數值大小升冪排序 (順序必然為：殺怪數 < 獲得楓幣 < 獲得經驗值)
+    const sortedNums = Array.from(new Set(parsedLineNumbers)).sort((a, b) => a - b);
 
     if (sortedNums.length >= 3) {
       inputKills.value = formatNum(sortedNums[0]);
