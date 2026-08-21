@@ -6,8 +6,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // --- 註冊 Service Worker 實現跨裝置 PWA 離線支援 ---
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js')
-      .then(reg => console.log('[Service Worker v4] Registered successfully:', reg.scope))
-      .catch(err => console.log('[Service Worker v4] Registration skipped:', err));
+      .then(reg => console.log('[Service Worker v5] Registered successfully:', reg.scope))
+      .catch(err => console.log('[Service Worker v5] Registration skipped:', err));
   }
 
   // --- DOM 元素引用 ---
@@ -279,7 +279,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================================================
-  // 核心邏輯 2: 純白字數據視窗對應 (嚴格排除頂部戰力與活動徽章)
+  // 核心邏輯 2: 純白字數據視窗與三大戰場名稱對應
   // ==========================================================================
 
   async function handleImageUpload(file) {
@@ -294,14 +294,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function runMultiEngineOCR(imageSource) {
     ocrProgressBox.style.display = 'block';
-    ocrStatusText.textContent = '🚀 正在啟動高精度數據與戰場 OCR 分析...';
+    ocrStatusText.textContent = '🚀 正在啟動高精度數據與三大戰場 OCR 分析...';
     ocrPercentText.textContent = '0%';
     ocrProgressBar.style.width = '0%';
 
     try {
       const img = await loadImage(imageSource);
       
-      // 100% 獨立隔離左側 4 行數據視窗 (完全不混入頂部戰力與徽章)
+      // 100% 獨立隔離左側 4 行數據視窗與右上角戰場資訊
       const whiteNumCanvas = createAdaptiveWhiteNumbersCanvas(img);
       const mapCanvas = createFilteredMapCanvas(img);
 
@@ -346,9 +346,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const mapText = mapRes.data.text;
       const rawText = rawRes.data.text;
 
-      console.log('=== Pure Numbers OCR (Stats Box Only) ===\n', numText);
+      console.log('=== Pure Numbers OCR ===\n', numText);
+      console.log('=== Map Panel OCR ===\n', mapText);
 
-      // 解析戰場名稱
+      // 解析三大戰場名稱 (星力、神秘之力、真實之力)
       const mapName = parseMapName(mapText + '\n' + rawText);
       if (mapName) {
         inputMapName.value = mapName;
@@ -357,7 +358,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // 僅依據 numText (數據視窗專用 Canvas) 進行精確行與數量級帶入
       parseStrictStatsWindowText(numText, rawText);
 
-      ocrStatusText.textContent = '✅ OCR 精確對應完成！時間、殺怪、楓幣與經驗值已正確帶入';
+      ocrStatusText.textContent = '✅ OCR 精確對應完成！戰場名稱、時間、殺怪、楓幣與經驗值已正確帶入';
       ocrPercentText.textContent = '100%';
       ocrProgressBar.style.width = '100%';
 
@@ -381,13 +382,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let x, y, w, h;
     if (isWide) {
-      // 16:9 全圖截圖：y 上緣特別下移避開頂部角色戰力與 D-32
+      // 16:9 全圖截圖
       x = Math.floor(img.width * 0.01);
       y = Math.floor(img.height * 0.24);
       w = Math.floor(img.width * 0.22);
       h = Math.floor(img.height * 0.23);
     } else {
-      // 局部/方形截圖 (如 370x427)
+      // 局部/方形截圖
       x = Math.floor(img.width * 0.01);
       y = Math.floor(img.height * 0.36);
       w = Math.floor(img.width * 0.58);
@@ -435,10 +436,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const isWide = (img.width / img.height) > 1.3;
     if (!isWide) return img;
 
-    const x = Math.floor(img.width * 0.70);
-    const y = Math.floor(img.height * 0.02);
-    const w = Math.floor(img.width * 0.29);
-    const h = Math.floor(img.height * 0.23);
+    const x = Math.floor(img.width * 0.68);
+    const y = Math.floor(img.height * 0.01);
+    const w = Math.floor(img.width * 0.31);
+    const h = Math.floor(img.height * 0.24);
 
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -466,34 +467,51 @@ document.addEventListener('DOMContentLoaded', () => {
     return canvas;
   }
 
-  // 地圖名稱解析
+  // ==========================================================================
+  // 核心邏輯 2.5: 三大戰場名稱精確解析 (星力戰場 / 神秘之力戰場 / 真實之力戰場)
+  // ==========================================================================
   function parseMapName(text) {
     if (!text) return '';
+    const cleanText = text.replace(/\n/g, ' ').trim();
 
-    if (text.includes('神秘') || text.includes('大哥') || text.includes('400') || text.includes('◆') || text.includes('◇') || text.includes('850')) {
-      const mapNameMatch = text.match(/(大哥的地盤\d?|無名村\d?|啾啾島\d?|拉契爾因\d?|阿爾卡娜\d?|莫拉斯\d?|艾斯佩拉\d?|[^\s<>]{2,10}地盤\d?)/);
-      const name = mapNameMatch ? mapNameMatch[1] : '大哥的地盤2';
-      const numMatch = text.match(/400|200|168|100|80|60/);
-      const reqVal = numMatch ? numMatch[0] : '400';
-      return `神秘之力 ${reqVal} - ${name}`;
+    // 1. 判定【真實之力戰場】 (藍紫色六角形 Icon, 例如 < 60 > 王立圖書館第3區域, 150/60)
+    const isAuthentic = /真實|AUT|Aut|圖書館|王立|賽爾尼溫|阿爾克斯|奧狄溫|桃源鄉|卡爾西安|⬡|⬢/.test(cleanText) ||
+                        /\d+\s*\/\s*(?:60|30|50|70|90|100|120|150)/.test(cleanText);
+    if (isAuthentic) {
+      // 提取要求數值 (如 <60> 或 150/60)
+      const reqMatch = cleanText.match(/<\s*[\D]*?(\d{2,3})\s*>|\d+\s*\/\s*(\d{2,3})/);
+      const reqVal = reqMatch ? (reqMatch[1] || reqMatch[2]) : '60';
+
+      // 提取地圖名稱
+      const mapMatch = cleanText.match(/([王立賽爾阿爾奧狄桃源卡爾][^\s<>]{2,12}(?:區域|街道|海岸|城鎮|地帶|\d)?)/);
+      const mapName = mapMatch ? mapMatch[1] : '王立圖書館第3區域';
+      return `真實之力 ${reqVal} - ${mapName}`;
     }
 
-    if (text.includes('★') || text.includes('星力') || text.includes('試煉洞穴') || text.includes('168') || text.includes('174')) {
-      const mapNameMatch = text.match(/(試煉洞穴\d?|星力\d+|[^\s<>]{2,10}洞穴\d?)/);
-      const name = mapNameMatch ? mapNameMatch[1] : '試煉洞穴1';
-      const reqVal = text.match(/168|144|130|120/) ? text.match(/168|144|130|120/)[0] : '168';
-      return `星力 ${reqVal} - ${name}`;
+    // 2. 判定【神秘之力戰場】 (藍色圓形中間有十字 Icon, 例如 <◆400> 大哥的地盤2)
+    const isArcane = /神秘|◆|◇|✦|850|400|360|200|160|80|大哥|無名村|啾啾|拉契爾因|阿爾卡娜|莫拉斯|艾斯佩拉/.test(cleanText);
+    if (isArcane) {
+      const reqMatch = cleanText.match(/<\s*[\D]*?(\d{2,4})\s*>|(\d{3,4})/);
+      const reqVal = reqMatch ? (reqMatch[1] || reqMatch[2]) : '400';
+
+      const mapMatch = cleanText.match(/([大哥無名啾啾拉契阿爾莫拉艾斯][^\s<>]{2,12}(?:地盤|村|島|街|深處|\d)?)/);
+      const mapName = mapMatch ? mapMatch[1] : '大哥的地盤2';
+      return `神秘之力 ${reqVal} - ${mapName}`;
     }
 
-    if (text.includes('真實') || text.includes('AUT') || text.includes('Aut')) {
-      const autVal = text.match(/AUT\s*(\d+)|(\d+)\s*\/\s*(\d+)/i);
-      const val = autVal ? (autVal[1] || autVal[2]) : '30';
-      const mapNameMatch = text.match(/([^\s<>]{2,10}街道\d?|[^\s<>]{2,10}海岸\d?)/);
-      const name = mapNameMatch ? mapNameMatch[1] : '賽爾尼溫';
-      return `真實之力 ${val} - ${name}`;
+    // 3. 判定【星力戰場】 (紅色圓形中間白色星星 Icon, 例如 <★168> 試煉洞穴1)
+    const isStarForce = /星力|★|168|174|144|130|120|80|試煉|洞穴/.test(cleanText);
+    if (isStarForce) {
+      const reqMatch = cleanText.match(/<\s*[\D]*?(\d{2,3})\s*>|(\d{2,3})/);
+      const reqVal = reqMatch ? (reqMatch[1] || reqMatch[2]) : '168';
+
+      const mapMatch = cleanText.match(/([試煉星力][^\s<>]{2,12}(?:洞穴|戰場|\d)?)/);
+      const mapName = mapMatch ? mapMatch[1] : '試煉洞穴1';
+      return `星力 ${reqVal} - ${mapName}`;
     }
 
-    const generalMatch = text.match(/<[^\d]*(\d+)[^>]*>\s*([^\s<>]{2,12})/);
+    // 一般萬用備用匹配
+    const generalMatch = cleanText.match(/<\s*[\D]*?(\d+)\s*>\s*([^\s<>]{2,12})/);
     if (generalMatch) {
       return `戰場 ${generalMatch[1]} - ${generalMatch[2]}`;
     }
@@ -516,7 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // 2. 僅從 engText (掛機數據視窗) 提取數字，絕不從 rawText 抓取頂部戰力！
+    // 2. 僅從 engText (掛機數據視窗) 提取數字
     const lines = engText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     const windowNums = [];
 
@@ -526,19 +544,17 @@ document.addEventListener('DOMContentLoaded', () => {
       if (cleanDigits.length > 0) {
         const val = parseInt(cleanDigits, 10);
         if (!isNaN(val) && val > 0 && val < 1e15) {
-          // 過濾單雙位數的徽章圖示雜訊
           if (val <= 50 && windowNums.length === 0) return;
           windowNums.push(val);
         }
       }
     });
 
-    // 3. 雙重分配邏輯：優先按【數量級】鎖定，防止頂部任何殘留雜訊
+    // 3. 雙重分配邏輯：優先按【數量級】鎖定
     let foundKills = windowNums.find(n => n >= 50 && n < 500000);
     let foundMeso = windowNums.find(n => n >= 500000 && n < 500000000);
     let foundExp = windowNums.find(n => n >= 500000000);
 
-    // 備用方案：如果數量級沒齊全，按數據視窗內部出現順序 1:殺怪 2:楓幣 3:經驗
     if (!foundKills || !foundMeso || !foundExp) {
       if (windowNums.length >= 3) {
         foundKills = foundKills || windowNums[0];

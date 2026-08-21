@@ -1,11 +1,11 @@
 /* ==========================================================================
-   楓之谷M 掛機收益分析器 - Service Worker (v3 網路優先 Network-First 策略)
+   楓之谷M 掛機收益分析器 - Service Worker (v5 網路優先 Network-First 策略)
    ========================================================================== */
 
-const CACHE_NAME = 'maplem-income-v3';
+const CACHE_NAME = 'maplem-income-v5';
 
 self.addEventListener('install', (e) => {
-  console.log('[SW v3] Installing and activating immediately...');
+  console.log('[SW v5] Installing and activating immediately...');
   self.skipWaiting();
 });
 
@@ -15,7 +15,7 @@ self.addEventListener('activate', (e) => {
       return Promise.all(
         keys.map((key) => {
           if (key !== CACHE_NAME) {
-            console.log('[SW v3] Deleting old cache:', key);
+            console.log('[SW v5] Deleting old cache:', key);
             return caches.delete(key);
           }
         })
