@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>楓之谷M 掛機收益分析與截圖自動辨識工具</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;900&family=Outfit:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <!-- CSS Styles -->
+  <link rel="stylesheet" href="style.css">
+  <!-- External Libraries (Tesseract.js OCR & Chart.js) -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+  <div class="container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-badge">
+        <i class="fa-solid fa-bolt"></i> MapleStory M Auto-Battle Analytics
+      </div>
+      <h1>
+        <i class="fa-solid fa-coins text-gold"></i>
+        楓之谷M 掛機收益計算與截圖辨識
+      </h1>
+      <p>拖曳上傳或貼上遊戲截圖，AI 自動辨識殺怪、楓幣與經驗值，並即時估算 1 ~ 24 小時收益</p>
+    </header>
+
+    <!-- Main Grid -->
+    <div class="grid-main">
+      
+      <!-- Left Column: Upload & OCR Input Form -->
+      <section class="glass-card">
+        <h2 class="card-title">
+          <span class="title-icon text-gold"><i class="fa-solid fa-camera"></i></span>
+          截圖辨識與數據輸入
+        </h2>
+
+        <!-- Upload Dropzone -->
+        <div class="upload-dropzone" id="dropzone">
+          <input type="file" id="fileInput" accept="image/*" style="display: none;">
+          <div class="dropzone-content">
+            <div class="dropzone-icon">
+              <i class="fa-solid fa-cloud-arrow-up"></i>
+            </div>
+            <div class="dropzone-text">
+              <strong>拖曳截圖至此，或點擊上傳</strong>
+              <p>支援直接貼上 (Ctrl+V) 或選取檔名</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Action Buttons -->
+        <div class="action-buttons-group">
+          <button type="button" class="btn btn-primary" id="btnSampleImg">
+            <i class="fa-solid fa-wand-magic-sparkles"></i> 試用範例截圖
+          </button>
+          <button type="button" class="btn btn-secondary" id="btnSelectFile">
+            <i class="fa-solid fa-folder-open"></i> 選擇圖片檔案
+          </button>
+        </div>
+
+        <!-- Preview & Progress -->
+        <div class="preview-container" id="previewContainer">
+          <div class="preview-image-wrapper">
+            <img id="previewImage" src="" alt="截圖預覽">
+          </div>
+          <div class="ocr-progress-box" id="ocrProgressBox" style="display: none;">
+            <div class="ocr-progress-header">
+              <span id="ocrStatusText" class="text-gold">辨識處理中...</span>
+              <span id="ocrPercentText">0%</span>
+            </div>
+            <div class="progress-bar-bg">
+              <div class="progress-bar-fill" id="ocrProgressBar"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Inputs Form -->
+        <div class="form-grid" style="margin-top: 24px;">
+          
+          <div class="form-group full-width">
+            <label class="form-label" for="inputMapName">
+              <i class="fa-solid fa-map-location-dot text-gold"></i> 地圖 / 角色 / 職業備註
+            </label>
+            <input type="text" id="inputMapName" class="input-control" placeholder="例：星力144 / 200級 冰雷魔導士" value="星力戰場 144">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="inputTime">
+              <i class="fa-solid fa-stopwatch text-cyan"></i> 進行時間 (HH:MM:SS)
+            </label>
+            <input type="text" id="inputTime" class="input-control" placeholder="00:46:54" value="00:46:54">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="inputKills">
+              <i class="fa-solid fa-skull text-cyan"></i> 消滅怪物數量
+            </label>
+            <input type="text" id="inputKills" class="input-control" placeholder="5,188" value="5,188">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="inputMeso">
+              <i class="fa-solid fa-coins text-gold"></i> 獲得楓幣
+            </label>
+            <input type="text" id="inputMeso" class="input-control" placeholder="8,428,425" value="8,428,425">
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="inputExp">
+              <i class="fa-solid fa-sparkles text-purple"></i> 獲得經驗值
+            </label>
+            <input type="text" id="inputExp" class="input-control" placeholder="33,047,651,444" value="33,047,651,444">
+          </div>
+
+        </div>
+
+      </section>
+
+      <!-- Right Column: Real-time Calculations & Display Table -->
+      <section class="glass-card">
+        
+        <!-- Target Hours Selector Box -->
+        <div class="selector-highlight-box pulse-target">
+          <div class="selector-info">
+            <h3><i class="fa-solid fa-calculator"></i> 自訂計算時數</h3>
+            <p>選擇要試算預估累積數量的時數：</p>
+          </div>
+          <div class="selector-control-wrap">
+            <select id="selectTargetHours" class="select-target-hours">
+              <option value="1">1 小時</option>
+              <option value="2">2 小時</option>
+              <option value="3">3 小時</option>
+              <option value="4">4 小時</option>
+              <option value="5">5 小時</option>
+              <option value="6" selected>6 小時 (常見Auto長度)</option>
+              <option value="8">8 小時</option>
+              <option value="10">10 小時</option>
+              <option value="12">12 小時</option>
+              <option value="18">18 小時</option>
+              <option value="24">24 小時 (整天)</option>
+              <option value="custom">自訂小時...</option>
+            </select>
+            <input type="number" id="inputCustomHours" class="input-control" style="width: 90px; display: none;" placeholder="時數" min="0.1" step="0.5" value="7">
+          </div>
+        </div>
+
+        <h2 class="card-title">
+          <span class="title-icon text-gold"><i class="fa-solid fa-table-list"></i></span>
+          收益分析與預估表格
+        </h2>
+
+        <!-- Calculations Data Table -->
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>項目 Metric</th>
+                <th>截圖原始數據</th>
+                <th>每 1 小時平均</th>
+                <th><span id="headerTargetHours">6 小時</span>預估累積 <span class="badge-target">目標</span></th>
+                <th>24 小時預估 (日收益)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <span class="metric-name metric-time">
+                    <i class="fa-solid fa-clock"></i> 進行時間
+                  </span>
+                </td>
+                <td id="cellRawTime">00:46:54</td>
+                <td>1.00 小時</td>
+                <td id="cellTargetTime">6.00 小時</td>
+                <td>24.00 小時</td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="metric-name metric-kill">
+                    <i class="fa-solid fa-skull"></i> 消滅怪物
+                  </span>
+                </td>
+                <td id="cellRawKills">5,188 隻</td>
+                <td id="cellHourlyKills" class="val-highlight">0 隻</td>
+                <td id="cellTargetKills" class="val-highlight">0 隻</td>
+                <td id="cellDailyKills">0 隻</td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="metric-name metric-gold">
+                    <i class="fa-solid fa-coins"></i> 獲得楓幣
+                  </span>
+                </td>
+                <td id="cellRawMeso">8,428,425</td>
+                <td id="cellHourlyMeso" class="val-highlight">0</td>
+                <td id="cellTargetMeso" class="val-highlight">0</td>
+                <td id="cellDailyMeso">0</td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="metric-name metric-exp">
+                    <i class="fa-solid fa-bolt"></i> 獲得經驗值
+                  </span>
+                </td>
+                <td id="cellRawExp">33,047,651,444</td>
+                <td id="cellHourlyExp" class="val-exp-highlight">0</td>
+                <td id="cellTargetExp" class="val-exp-highlight">0</td>
+                <td id="cellDailyExp">0</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Efficiency Stats Cards -->
+        <div class="stats-grid">
+          
+          <div class="stat-card" style="--card-accent: #f59e0b;">
+            <span class="stat-title"><i class="fa-solid fa-coins"></i> 每萬隻怪物楓幣收益</span>
+            <span class="stat-value" id="statMesoPer10k">0</span>
+            <span class="stat-sub">楓幣 / 10,000 隻怪</span>
+          </div>
+
+          <div class="stat-card" style="--card-accent: #a855f7;">
+            <span class="stat-title"><i class="fa-solid fa-graduation-cap"></i> 每萬隻怪物經驗收益</span>
+            <span class="stat-value" id="statExpPer10k">0</span>
+            <span class="stat-sub">經驗 / 10,000 隻怪</span>
+          </div>
+
+          <div class="stat-card" style="--card-accent: #06b6d4;">
+            <span class="stat-title"><i class="fa-solid fa-stopwatch"></i> 每分鐘清怪速度</span>
+            <span class="stat-value" id="statKillsPerMin">0</span>
+            <span class="stat-sub">隻怪 / 分鐘</span>
+          </div>
+
+          <div class="stat-card" style="--card-accent: #3b82f6;">
+            <span class="stat-title"><i class="fa-solid fa-calendar-days"></i> 月預估楓幣 (30天)</span>
+            <span class="stat-value text-gold" id="statMonthlyMeso">0</span>
+            <span class="stat-sub">假設每日掛機 24 小時</span>
+          </div>
+
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 12px;">
+          <button type="button" class="btn btn-purple" id="btnSaveRecord">
+            <i class="fa-solid fa-bookmark"></i> 儲存至歷史紀錄比較
+          </button>
+        </div>
+
+      </section>
+
+    </div>
+
+    <!-- Section 2: Visual Chart -->
+    <section class="glass-card section-full">
+      <h2 class="card-title">
+        <span class="title-icon text-purple"><i class="fa-solid fa-chart-line"></i></span>
+        1 ~ 24 小時累積收益趨勢圖表
+      </h2>
+      <div class="chart-wrapper">
+        <canvas id="incomeChart"></canvas>
+      </div>
+    </section>
+
+    <!-- Section 3: History Comparison Table -->
+    <section class="glass-card section-full">
+      <div class="history-actions">
+        <h2 class="card-title" style="margin-bottom: 0; border-bottom: none; padding-bottom: 0;">
+          <span class="title-icon text-cyan"><i class="fa-solid fa-box-archive"></i></span>
+          歷史紀錄與地圖效益比較
+        </h2>
+        <div style="display: flex; gap: 10px;">
+          <button type="button" class="btn btn-secondary" id="btnExportCSV">
+            <i class="fa-solid fa-file-csv"></i> 匯出 CSV
+          </button>
+          <button type="button" class="btn btn-secondary" id="btnClearHistory" style="color: #ef4444;">
+            <i class="fa-solid fa-trash"></i> 清空紀錄
+          </button>
+        </div>
+      </div>
+
+      <div class="table-responsive" style="margin-top: 16px;">
+        <table class="data-table" id="historyTable">
+          <thead>
+            <tr>
+              <th>地圖 / 備註</th>
+              <th>掛機時間</th>
+              <th>每小時殺怪</th>
+              <th>每小時楓幣</th>
+              <th>每小時經驗</th>
+              <th>萬怪楓幣效率</th>
+              <th>記錄時間</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody id="historyTableBody">
+            <!-- Dynamic Rows -->
+            <tr>
+              <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">
+                尚未儲存任何歷史紀錄。填寫數據後點擊「儲存至歷史紀錄比較」即可對比效益！
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- JavaScript Logic -->
+  <script src="app.js"></script>
+</body>
+</html>
