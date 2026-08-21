@@ -26,9 +26,9 @@
       </div>
       <h1>
         <i class="fa-solid fa-coins text-gold"></i>
-        楓之谷M 掛機收益計算與截圖辨識
+        楓之谷M 掛機收益計算與全圖截圖辨識
       </h1>
-      <p>拖曳上傳或貼上遊戲截圖，AI 自動辨識殺怪、楓幣與經驗值，並即時估算 1 ~ 24 小時收益</p>
+      <p>上傳或貼上遊戲全圖，自動辨識地圖 (神秘之力/真實之力/星力戰場) 與殺怪、楓幣、經驗值數據</p>
     </header>
 
     <!-- Main Grid -->
@@ -50,17 +50,14 @@
             </div>
             <div class="dropzone-text">
               <strong>拖曳截圖至此，或點擊上傳</strong>
-              <p>支援直接貼上 (Ctrl+V) 或選取檔名</p>
+              <p>支援全圖截圖或局部裁切（直接 Ctrl+V 貼上即可）</p>
             </div>
           </div>
         </div>
 
         <!-- Quick Action Buttons -->
         <div class="action-buttons-group">
-          <button type="button" class="btn btn-primary" id="btnSampleImg">
-            <i class="fa-solid fa-wand-magic-sparkles"></i> 試用範例截圖
-          </button>
-          <button type="button" class="btn btn-secondary" id="btnSelectFile">
+          <button type="button" class="btn btn-primary" id="btnSelectFile" style="width: 100%;">
             <i class="fa-solid fa-folder-open"></i> 選擇圖片檔案
           </button>
         </div>
@@ -86,37 +83,37 @@
           
           <div class="form-group full-width">
             <label class="form-label" for="inputMapName">
-              <i class="fa-solid fa-map-location-dot text-gold"></i> 地圖 / 角色 / 職業備註
+              <i class="fa-solid fa-map-location-dot text-gold"></i> 地圖 / 戰場名稱 (自動辨識或手動輸入)
             </label>
-            <input type="text" id="inputMapName" class="input-control" placeholder="例：星力144 / 200級 冰雷魔導士" value="星力戰場 144">
+            <input type="text" id="inputMapName" class="input-control" placeholder="例：神秘之力 400 - 大哥的地盤2" value="">
           </div>
 
           <div class="form-group">
             <label class="form-label" for="inputTime">
               <i class="fa-solid fa-stopwatch text-cyan"></i> 進行時間 (HH:MM:SS)
             </label>
-            <input type="text" id="inputTime" class="input-control" placeholder="00:46:54" value="00:46:54">
+            <input type="text" id="inputTime" class="input-control" placeholder="00:00:00" value="">
           </div>
 
           <div class="form-group">
             <label class="form-label" for="inputKills">
               <i class="fa-solid fa-skull text-cyan"></i> 消滅怪物數量
             </label>
-            <input type="text" id="inputKills" class="input-control" placeholder="5,188" value="5,188">
+            <input type="text" id="inputKills" class="input-control" placeholder="0" value="">
           </div>
 
           <div class="form-group">
             <label class="form-label" for="inputMeso">
               <i class="fa-solid fa-coins text-gold"></i> 獲得楓幣
             </label>
-            <input type="text" id="inputMeso" class="input-control" placeholder="8,428,425" value="8,428,425">
+            <input type="text" id="inputMeso" class="input-control" placeholder="0" value="">
           </div>
 
           <div class="form-group">
             <label class="form-label" for="inputExp">
               <i class="fa-solid fa-sparkles text-purple"></i> 獲得經驗值
             </label>
-            <input type="text" id="inputExp" class="input-control" placeholder="33,047,651,444" value="33,047,651,444">
+            <input type="text" id="inputExp" class="input-control" placeholder="0" value="">
           </div>
 
         </div>
@@ -175,7 +172,7 @@
                     <i class="fa-solid fa-clock"></i> 進行時間
                   </span>
                 </td>
-                <td id="cellRawTime">00:46:54</td>
+                <td id="cellRawTime">00:00:00 (0分)</td>
                 <td>1.00 小時</td>
                 <td id="cellTargetTime">6.00 小時</td>
                 <td>24.00 小時</td>
@@ -186,7 +183,7 @@
                     <i class="fa-solid fa-skull"></i> 消滅怪物
                   </span>
                 </td>
-                <td id="cellRawKills">5,188 隻</td>
+                <td id="cellRawKills">0 隻</td>
                 <td id="cellHourlyKills" class="val-highlight">0 隻</td>
                 <td id="cellTargetKills" class="val-highlight">0 隻</td>
                 <td id="cellDailyKills">0 隻</td>
@@ -197,7 +194,7 @@
                     <i class="fa-solid fa-coins"></i> 獲得楓幣
                   </span>
                 </td>
-                <td id="cellRawMeso">8,428,425</td>
+                <td id="cellRawMeso">0</td>
                 <td id="cellHourlyMeso" class="val-highlight">0</td>
                 <td id="cellTargetMeso" class="val-highlight">0</td>
                 <td id="cellDailyMeso">0</td>
@@ -208,7 +205,7 @@
                     <i class="fa-solid fa-bolt"></i> 獲得經驗值
                   </span>
                 </td>
-                <td id="cellRawExp">33,047,651,444</td>
+                <td id="cellRawExp">0</td>
                 <td id="cellHourlyExp" class="val-exp-highlight">0</td>
                 <td id="cellTargetExp" class="val-exp-highlight">0</td>
                 <td id="cellDailyExp">0</td>
@@ -302,7 +299,7 @@
             <!-- Dynamic Rows -->
             <tr>
               <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">
-                尚未儲存任何歷史紀錄。填寫數據後點擊「儲存至歷史紀錄比較」即可對比效益！
+                尚未儲存任何歷史紀錄。上傳截圖辨識並確認數據後，點擊「儲存至歷史紀錄比較」即可對比效益！
               </td>
             </tr>
           </tbody>
