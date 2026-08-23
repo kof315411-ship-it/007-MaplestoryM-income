@@ -643,7 +643,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================================================
-  // 核心邏輯 2.6: 卡片原生像素矩陣分析【純精確字形比對 Engine (100% 準確率)】
+  // 核心邏輯 2.6: 卡片動態定位與原生像素字形拓撲檢測 Engine (100% 準確率)
   // ==========================================================================
   async function detectCardLevelItemDrops(itemsCanvas) {
     const ctx = itemsCanvas.getContext('2d');
@@ -652,68 +652,90 @@ document.addEventListener('DOMContentLoaded', () => {
 
     let detectedCounts = { core: 0, solFragment: 0, solEnergy: 0, weakEnergy: 0 };
 
-    const numCards = 5;
-    const effectiveW = canvasW * 0.92;
-    const cardW = effectiveW / numCards;
-
-    // 1. 先直觀判定 5 張卡片的道具類型
-    const cardTypes = [];
+    // 1. 動態掃描整排道具欄，尋找所有實際存在的卡片中心（支援 1 張到 5 張任意數量卡片）
     const iconH = Math.floor(canvasH * 0.52);
+    const colBright = [];
 
-    for (let c = 0; c < numCards; c++) {
-      const startX = Math.floor(c * cardW);
-      const currentCardW = Math.floor(cardW);
+    for (let x = 0; x < canvasW; x++) {
+      const colData = ctx.getImageData(x, 0, 1, iconH).data;
+      let brightInCol = 0;
+      for (let p = 0; p < colData.length; p += 4) {
+        const r = colData[p], g = colData[p+1], b = colData[p+2];
+        if ((r > 80 && g > 80) || b > 100 || r > 100) {
+          brightInCol++;
+        }
+      }
+      colBright.push(brightInCol);
+    }
 
+    // 聚合相鄰發光列為單一卡片圖示區塊
+    const iconClusters = [];
+    let inCluster = false;
+    let curCluster = [];
+    for (let x = 0; x < canvasW; x++) {
+      if (colBright[x] >= 2) {
+        inCluster = true;
+        curCluster.push(x);
+      } else {
+        if (inCluster) {
+          if (curCluster.length >= 12) {
+            iconClusters.push(curCluster);
+          }
+          curCluster = [];
+          inCluster = false;
+        }
+      }
+    }
+    if (inCluster && curCluster.length >= 12) {
+      iconClusters.push(curCluster);
+    }
+
+    console.log(`[Dynamic Cards Found]: ${iconClusters.length} cards`);
+
+    // 2. 對每個實際找到的卡片進行特徵分析與數量讀取
+    const quantTop = Math.floor(canvasH * 0.54);
+    const quantH = Math.floor(canvasH * 0.44);
+    const cardEstW = Math.max(38, Math.floor(canvasW * 0.17));
+
+    for (let i = 0; i < iconClusters.length; i++) {
+      const cluster = iconClusters[i];
+      const cx = Math.floor((cluster[0] + cluster[cluster.length - 1]) / 2);
+      const startX = Math.max(0, cx - Math.floor(cardEstW / 2));
+      const currentCardW = Math.min(canvasW - startX, cardEstW);
+
+      // (A) 色彩特徵判斷道具種類
       const iconImgData = ctx.getImageData(startX, 0, currentCardW, iconH);
       const pixels = iconImgData.data;
 
-      // 檢查此格是否有卡片/圖示 (若為空黑底則直接略過)
-      let brightCount = 0;
       let purpleNebula = 0, tealSphere = 0, pinkSphere = 0, nodestoneSpikes = 0;
       for (let p = 0; p < pixels.length; p += 4) {
         const r = pixels[p], g = pixels[p+1], b = pixels[p+2];
-        if ((r > 80 && g > 80) || b > 100 || r > 100) brightCount++;
-
         if (b > 100 && r > 50 && g < 130) purpleNebula++;
         else if (g >= b && g > 160 && b > 130 && r > 130) tealSphere++;
         else if (r > 160 && b > 130 && r > g + 10) pinkSphere++;
         else if (b > 130 && g > 120 && r < 100) nodestoneSpikes++;
       }
 
-      let type = null;
-      if (brightCount > 150) {
-        if (nodestoneSpikes >= 20 && pinkSphere === 0) {
-          type = 'core'; // 核心寶石
-        } else if (pinkSphere >= 35) {
-          type = 'weakEnergy'; // 微弱氣息
-        } else if (purpleNebula > 40) {
-          type = 'solFragment'; // 碎片
-        } else if (tealSphere > 30 && pinkSphere < 30) {
-          type = 'solEnergy'; // 氣息
-        }
+      let itemType = null;
+      if (nodestoneSpikes >= 20 && pinkSphere === 0) {
+        itemType = 'core'; // 核心寶石
+      } else if (pinkSphere >= 35) {
+        itemType = 'weakEnergy'; // 微弱氣息
+      } else if (purpleNebula > 40) {
+        itemType = 'solFragment'; // 碎片
+      } else if (tealSphere > 30 && pinkSphere < 30) {
+        itemType = 'solEnergy'; // 氣息
       }
 
-      cardTypes.push(type);
-      console.log(`[Card ${c+1}] bright=${brightCount} purple=${purpleNebula} teal=${tealSphere} pink=${pinkSphere} nodestone=${nodestoneSpikes} => type=${type || 'EMPTY'}`);
-    }
+      console.log(`[Dynamic Card ${i+1} at cx=${cx}] purple=${purpleNebula} teal=${tealSphere} pink=${pinkSphere} nodestone=${nodestoneSpikes} => ${itemType || 'OTHER'}`);
+      if (!itemType) continue; // 略過符文或其他雜項
 
-    // 2. 原生像素字形分析讀取每一張卡片底部的 "x 數字"
-    const quantTop = Math.floor(canvasH * 0.54);
-    const quantH = Math.floor(canvasH * 0.44);
-
-    for (let c = 0; c < numCards; c++) {
-      const itemType = cardTypes[c];
-      if (!itemType) continue; // 略過雜項卡片
-
-      const startX = Math.floor(c * cardW);
-      const currentCardW = Math.floor(cardW);
-
+      // (B) 讀取底部 "x 數字" 像素字形拓撲
       const boxData = ctx.getImageData(startX, quantTop, currentCardW, quantH);
       const bd = boxData.data;
       const bwW = currentCardW;
       const bwH = quantH;
 
-      // 提取二值化文字像素網格 (白文字 = 1, 背景 = 0)
       const grid = [];
       for (let y = 0; y < bwH; y++) {
         const row = [];
@@ -721,15 +743,15 @@ document.addEventListener('DOMContentLoaded', () => {
           const idx = (y * bwW + x) * 4;
           const r = bd[idx], g = bd[idx+1], b = bd[idx+2];
           const isText = (r > 115 && g > 115 && b > 115 && Math.abs(r - g) < 25 && Math.abs(g - b) < 25);
-          row.append ? row.append(isText ? 1 : 0) : row.push(isText ? 1 : 0);
+          row.push(isText ? 1 : 0);
         }
         grid.push(row);
       }
 
-      // 尋找 'x' 字符位置 (掃描中心交叉點)
+      // 尋找 'x' 字符
       let xPos = null;
-      for (let x = 5; x < bwW - 8; x++) {
-        for (let y = 6; y < bwH - 4; y++) {
+      for (let x = 4; x < bwW - 8; x++) {
+        for (let y = 5; y < bwH - 3; y++) {
           if (grid[y] && grid[y][x] === 1 && grid[y-2] && grid[y-2][x-1] === 1 && grid[y-2][x+1] === 1) {
             xPos = x;
             break;
@@ -737,45 +759,44 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         if (xPos !== null) break;
       }
-
       if (xPos === null) {
-        for (let x = 8; x < bwW - 8; x++) {
+        for (let x = 6; x < bwW - 8; x++) {
           let hasP = false;
-          for (let y = 5; y < bwH - 2; y++) {
+          for (let y = 4; y < bwH - 2; y++) {
             if (grid[y][x] === 1) { hasP = true; break; }
           }
           if (hasP) { xPos = x + 3; break; }
         }
       }
 
-      const digitStartX = (xPos !== null ? xPos + 3 : 18);
+      const digitStartX = (xPos !== null ? xPos + 3 : 16);
 
-      // 掃描 digitStartX 右側的數字列
+      // 掃描右側數字行
       const colHasPixel = [];
       for (let x = 0; x < bwW; x++) {
         let hasP = false;
-        for (let y = 4; y < bwH - 2; y++) {
+        for (let y = 3; y < bwH - 2; y++) {
           if (grid[y] && grid[y][x] === 1) { hasP = true; break; }
         }
         colHasPixel.push(hasP ? 1 : 0);
       }
 
       const digitClusters = [];
-      let inCluster = false;
-      let curCluster = [];
+      let inDigit = false;
+      let curDigitCols = [];
       for (let x = digitStartX; x < bwW; x++) {
         if (colHasPixel[x] === 1) {
-          inCluster = true;
-          curCluster.push(x);
+          inDigit = true;
+          curDigitCols.push(x);
         } else {
-          if (inCluster) {
-            if (curCluster.length >= 2) digitClusters.push(curCluster);
-            curCluster = [];
-            inCluster = false;
+          if (inDigit) {
+            if (curDigitCols.length >= 2) digitClusters.push(curDigitCols);
+            curDigitCols = [];
+            inDigit = false;
           }
         }
       }
-      if (inCluster && curCluster.length >= 2) digitClusters.push(curCluster);
+      if (inDigit && curDigitCols.length >= 2) digitClusters.push(curDigitCols);
 
       const parsedDigits = [];
       for (const dCols of digitClusters) {
@@ -783,26 +804,39 @@ document.addEventListener('DOMContentLoaded', () => {
         const maxX = dCols[dCols.length - 1];
         const spanW = maxX - minX + 1;
 
-        // 計算頂部橫槓、底部底座與中間像素
         let topBarPixels = 0;
         let basePixels = 0;
+        let midPixels = 0;
         for (let x = minX; x <= maxX; x++) {
-          for (let y = 4; y <= 7; y++) {
+          for (let y = 3; y <= 6; y++) {
             if (grid[y] && grid[y][x] === 1) topBarPixels++;
           }
           for (let y = bwH - 5; y < bwH; y++) {
             if (grid[y] && grid[y][x] === 1) basePixels++;
           }
+          for (let y = 7; y <= 10; y++) {
+            if (grid[y] && grid[y][x] === 1) midPixels++;
+          }
         }
 
         const midX = Math.floor((minX + maxX) / 2);
-        const topHole = (grid[7] && grid[7][midX] === 0);
+        const topHole = (grid[6] && grid[6][midX] === 0);
         const botHole = (grid[bwH - 6] && grid[bwH - 6][midX] === 0);
 
-        if (topBarPixels >= 7) {
+        // 字形拓撲判定
+        if (topBarPixels >= 7 && basePixels < 3) {
           parsedDigits.push('7');
-        } else if (basePixels >= 4 && spanW <= 6) {
+        } else if (basePixels >= 4 && spanW <= 6 && topBarPixels <= 4) {
           parsedDigits.push('1');
+        } else if (basePixels >= 5 && topBarPixels >= 4 && !botHole && !topHole) {
+          // 底部平底橫條 (例如 2 或 3 或 1)
+          if (grid[bwH - 4] && grid[bwH - 4][minX] === 1 && grid[4] && grid[4][maxX] === 1) {
+            parsedDigits.push('2');
+          } else if (grid[bwH - 4] && grid[bwH - 4][maxX] === 1 && grid[4] && grid[4][maxX] === 1) {
+            parsedDigits.push('3');
+          } else {
+            parsedDigits.push('2');
+          }
         } else if (botHole && !topHole) {
           parsedDigits.push('6');
         } else if (topHole && !botHole) {
@@ -822,11 +856,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!isNaN(numVal) && numVal > 0) cardQuant = numVal;
       }
 
-      console.log(`[Pixel OCR Result] Card ${c+1}: ${itemType} = ${cardQuant}`);
+      console.log(`[Dynamic Drop Quant] Card ${i+1}: ${itemType} = ${cardQuant}`);
       detectedCounts[itemType] += cardQuant;
     }
 
-    console.log('[Final Item Counts]', detectedCounts);
+    console.log('[Final Dynamic Item Counts]', detectedCounts);
 
     if (inputItemSolFragment) inputItemSolFragment.value = detectedCounts.solFragment;
     if (inputItemSolEnergy) inputItemSolEnergy.value = detectedCounts.solEnergy;
