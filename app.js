@@ -621,9 +621,9 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    // 3. 關鍵字優先匹配 (支援中英混雜與各種冒號)
+    // 3. 關鍵字優先匹配 (支援中英混雜與各種冒號，涵蓋 6 位數至 14 位數楓幣)
     const killsKeyMatch = engText.match(/(?:消滅|怪物|隻|kill)[\D]*?([\d,]{3,10})/i);
-    const mesoKeyMatch = engText.match(/(?:楓幣|金幣|獲得|楓|幣|meso|金)[\D]*?([\d,]{4,14})/i);
+    const mesoKeyMatch = engText.match(/(?:楓幣|金幣|獲得|楓|幣|meso|金)[\D]*?([\d,]{3,14})/i);
     const expKeyMatch = engText.match(/(?:經驗|EXP|exp|值)[\D]*?([\d,]{6,18})/i);
 
     let foundKills = killsKeyMatch ? parseInt(killsKeyMatch[1].replace(/,/g, ''), 10) : null;
@@ -667,9 +667,13 @@ document.addEventListener('DOMContentLoaded', () => {
       const iconImgData = ctx.getImageData(startX, 0, currentCardW, iconH);
       const pixels = iconImgData.data;
 
+      // 檢查此格是否有卡片/圖示 (若為空黑底則直接略過)
+      let brightCount = 0;
       let purpleNebula = 0, tealSphere = 0, pinkSphere = 0, nodestoneSpikes = 0;
       for (let p = 0; p < pixels.length; p += 4) {
         const r = pixels[p], g = pixels[p+1], b = pixels[p+2];
+        if ((r > 80 && g > 80) || b > 100 || r > 100) brightCount++;
+
         if (b > 100 && r > 50 && g < 130) purpleNebula++;
         else if (g >= b && g > 160 && b > 130 && r > 130) tealSphere++;
         else if (r > 160 && b > 130 && r > g + 10) pinkSphere++;
@@ -677,18 +681,20 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       let type = null;
-      if (nodestoneSpikes >= 20 && pinkSphere === 0) {
-        type = 'core'; // 核心寶石
-      } else if (pinkSphere >= 35) {
-        type = 'weakEnergy'; // 微弱氣息
-      } else if (purpleNebula > 40) {
-        type = 'solFragment'; // 碎片
-      } else if (tealSphere > 30 && pinkSphere < 30) {
-        type = 'solEnergy'; // 氣息
+      if (brightCount > 150) {
+        if (nodestoneSpikes >= 20 && pinkSphere === 0) {
+          type = 'core'; // 核心寶石
+        } else if (pinkSphere >= 35) {
+          type = 'weakEnergy'; // 微弱氣息
+        } else if (purpleNebula > 40) {
+          type = 'solFragment'; // 碎片
+        } else if (tealSphere > 30 && pinkSphere < 30) {
+          type = 'solEnergy'; // 氣息
+        }
       }
 
       cardTypes.push(type);
-      console.log(`[Card ${c+1}] type=${type || 'OTHER'}`);
+      console.log(`[Card ${c+1}] bright=${brightCount} purple=${purpleNebula} teal=${tealSphere} pink=${pinkSphere} nodestone=${nodestoneSpikes} => type=${type || 'EMPTY'}`);
     }
 
     // 2. 原生像素字形分析讀取每一張卡片底部的 "x 數字"
