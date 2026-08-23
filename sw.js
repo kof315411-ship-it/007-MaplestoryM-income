@@ -1,11 +1,11 @@
 /* ==========================================================================
-   楓之谷M 掛機收益分析器 - Service Worker (v12 網路優先 Network-First 策略)
+   楓�?谷M ?��??��??��???- Service Worker (v13 網路?��? Network-First 策略)
    ========================================================================== */
 
-const CACHE_NAME = 'maplem-income-v12';
+const CACHE_NAME = 'maplem-income-v13';
 
 self.addEventListener('install', (e) => {
-  console.log('[SW v12] Installing and activating immediately...');
+  console.log('[SW v13] Installing and activating immediately...');
   self.skipWaiting();
 });
 
@@ -15,7 +15,7 @@ self.addEventListener('activate', (e) => {
       return Promise.all(
         keys.map((key) => {
           if (key !== CACHE_NAME) {
-            console.log('[SW v12] Deleting old cache:', key);
+            console.log('[SW v13] Deleting old cache:', key);
             return caches.delete(key);
           }
         })
@@ -25,7 +25,7 @@ self.addEventListener('activate', (e) => {
   self.clients.claim();
 });
 
-// 網路優先 (Network First) 策略：確保每一次開啟均取得最新版 app.js
+// 網路?��? (Network First) 策略：確保�?一次�??��??��??�?��? app.js
 self.addEventListener('fetch', (e) => {
   e.respondWith(
     fetch(e.request)

@@ -643,141 +643,174 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCalculations();
   }
 
+  // 量測二值化影像中最後一個文字 blob 的寬度，窄 blob = "1"，寬 blob = 其他數字
+  function estimateDigitByBlobWidth(imgData, canvasW, canvasH, thresh) {
+    const data = imgData.data;
+    const topSkip = Math.floor(canvasH * 0.15);
+    const botSkip = Math.floor(canvasH * 0.85);
+
+    // 掃描每欄是否有亮像素
+    const colHasBright = [];
+    for (let col = 0; col < canvasW; col++) {
+      let hasBright = false;
+      for (let row = topSkip; row < botSkip; row++) {
+        const idx = (row * canvasW + col) * 4;
+        const avg = (data[idx] + data[idx+1] + data[idx+2]) / 3;
+        if (avg > thresh) { hasBright = true; break; }
+      }
+      colHasBright.push(hasBright);
+    }
+
+    // 找連通段 blobs
+    const blobs = [];
+    let blobStart = -1;
+    for (let col = 0; col < canvasW; col++) {
+      if (colHasBright[col] && blobStart === -1) blobStart = col;
+      else if (!colHasBright[col] && blobStart !== -1) {
+        blobs.push(col - blobStart);
+        blobStart = -1;
+      }
+    }
+    if (blobStart !== -1) blobs.push(canvasW - blobStart);
+
+    // 濾掉太小雜點
+    const sigBlobs = blobs.filter(w => w >= 3);
+    if (sigBlobs.length === 0) return -1;
+
+    // 取最後一個 blob（數字部分）
+    const digitW = sigBlobs[sigBlobs.length - 1];
+    const relW = digitW / canvasW;
+    console.log(`[BlobWidth] blobs=${JSON.stringify(sigBlobs)}, digitW=${digitW}, relW=${relW.toFixed(3)}`);
+
+    // 在 8x 放大下，"1" 的 relW < 0.15，其他數字 > 0.20
+    if (relW < 0.16) return 1;
+    return -1; // 需要 OCR 決定
+  }
+
   // ==========================================================================
   // 核心邏輯 2.6: 卡片級獨立對應【純圖像辨識 Engine】
-  // (1. 靈魂艾爾達斯碎片  2. 靈魂艾爾達斯氣息  3. 微弱靈魂艾爾達斯氣息  4. 核心寶石)
   // ==========================================================================
   async function detectCardLevelItemDrops(itemsCanvas, worker) {
     const ctx = itemsCanvas.getContext('2d');
     const canvasW = itemsCanvas.width;
     const canvasH = itemsCanvas.height;
 
-    let detectedCounts = {
-      core: 0,
-      solFragment: 0,
-      solEnergy: 0,
-      weakEnergy: 0
-    };
-
-    // 切換 Worker 為純數字單字模式 (避免中文干擾)
-    await worker.setParameters({
-      tessedit_char_whitelist: '0123456789xX',
-      tessedit_pageseg_mode: '8'  // PSM 8 = 單字模式，最適合 "x7" 這類短文字
-    });
+    let detectedCounts = { core: 0, solFragment: 0, solEnergy: 0, weakEnergy: 0 };
 
     const numCards = 5;
     const effectiveW = canvasW * 0.92;
     const cardW = effectiveW / numCards;
     const iconH = Math.floor(canvasH * 0.55);
-    // 只取底部 30%，更精準鎖定 "x數字" 文字區域
-    const quantTop = Math.floor(canvasH * 0.70);
+    // 從 60% 開始取，確保包含完整的 x數字 標籤
+    const quantTop = Math.floor(canvasH * 0.60);
     const quantH = canvasH - quantTop;
 
     for (let c = 0; c < numCards; c++) {
       const startX = Math.floor(c * cardW);
       const currentCardW = Math.floor(cardW);
 
-      // 1. 分析圖示上半部色彩特徵
+      // 1. 色彩分析判斷道具種類
       const iconImgData = ctx.getImageData(startX, 0, currentCardW, iconH);
       const pixels = iconImgData.data;
 
-      let cyanCount = 0;        // 靈魂艾爾達斯氣息
-      let pinkCount = 0;        // 微弱靈魂艾爾達斯氣息
-      let purpleCount = 0;      // 靈魂艾爾達斯碎片
-      let whiteDiamondCount = 0; // 核心寶石
-
+      let cyanCount = 0, pinkCount = 0, purpleCount = 0, whiteDiamondCount = 0;
       for (let p = 0; p < pixels.length; p += 4) {
-        const r = pixels[p], g = pixels[p + 1], b = pixels[p + 2];
-
+        const r = pixels[p], g = pixels[p+1], b = pixels[p+2];
         if (g > 170 && b > 170 && r < 200) cyanCount++;
         else if (r > 170 && b > 170 && g < 210 && r > g) pinkCount++;
         else if (b > 120 && r > 60 && r < 160 && g < 150) purpleCount++;
         else if (r > 210 && g > 210 && b > 210) whiteDiamondCount++;
       }
 
-      // 判定道具種類
       let cardItemType = null;
-      if (purpleCount > cyanCount && purpleCount > pinkCount && purpleCount > 150) {
-        cardItemType = 'solFragment';
-      } else if (cyanCount > pinkCount && cyanCount > purpleCount && cyanCount > 150) {
-        cardItemType = 'solEnergy';
-      } else if (pinkCount > cyanCount && pinkCount > purpleCount && pinkCount > 120) {
-        cardItemType = 'weakEnergy';
-      } else if (whiteDiamondCount > 300 && pinkCount < 80) {
-        cardItemType = 'core';
-      }
+      if (purpleCount > cyanCount && purpleCount > pinkCount && purpleCount > 150) cardItemType = 'solFragment';
+      else if (cyanCount > pinkCount && cyanCount > purpleCount && cyanCount > 150) cardItemType = 'solEnergy';
+      else if (pinkCount > cyanCount && pinkCount > purpleCount && pinkCount > 120) cardItemType = 'weakEnergy';
+      else if (whiteDiamondCount > 300 && pinkCount < 80) cardItemType = 'core';
 
       console.log(`[Card ${c+1}] cyan=${cyanCount} pink=${pinkCount} purple=${purpleCount} white=${whiteDiamondCount} => ${cardItemType || 'SKIP'}`);
-
       if (!cardItemType) continue;
 
-      // 2. 高解析度獨立數量辨識 Canvas (5x 放大 + 20px 白色邊距)
-      const quantScale = 5;
-      const pad = 20;
-      const singleCardCanvas = document.createElement('canvas');
-      singleCardCanvas.width = currentCardW * quantScale + pad * 2;
-      singleCardCanvas.height = quantH * quantScale + pad * 2;
+      // 2. 建立 8x 放大量數 canvas（白底）
+      const quantScale = 8;
+      const pad = 30;
+      const scW = currentCardW * quantScale + pad * 2;
+      const scH = quantH * quantScale + pad * 2;
 
-      const scCtx = singleCardCanvas.getContext('2d');
-      // 先填滿白色背景 (Tesseract 偏好白底黑字)
+      const baseCanvas = document.createElement('canvas');
+      baseCanvas.width = scW;
+      baseCanvas.height = scH;
+      const scCtx = baseCanvas.getContext('2d');
       scCtx.fillStyle = '#FFFFFF';
-      scCtx.fillRect(0, 0, singleCardCanvas.width, singleCardCanvas.height);
+      scCtx.fillRect(0, 0, scW, scH);
+      scCtx.imageSmoothingEnabled = false;
+      scCtx.drawImage(itemsCanvas, startX, quantTop, currentCardW, quantH, pad, pad, currentCardW * quantScale, quantH * quantScale);
 
-      // 將數量文字區域繪製到中央 (帶邊距)
-      scCtx.imageSmoothingEnabled = true;
-      scCtx.imageSmoothingQuality = 'high';
-      scCtx.drawImage(
-        itemsCanvas,
-        startX, quantTop, currentCardW, quantH,
-        pad, pad, currentCardW * quantScale, quantH * quantScale
-      );
+      // 3. 多閾值策略 (100, 115, 130)
+      let bestQuant = null;
+      let bestConf = -1;
 
-      // 二值化：亮度 > 130 的像素 → 黑色(文字)，其餘 → 白色(背景)
-      const scData = scCtx.getImageData(0, 0, singleCardCanvas.width, singleCardCanvas.height);
-      const d = scData.data;
+      for (const thresh of [100, 115, 130]) {
+        const bwCanvas = document.createElement('canvas');
+        bwCanvas.width = scW; bwCanvas.height = scH;
+        const bwCtx = bwCanvas.getContext('2d');
+        bwCtx.drawImage(baseCanvas, 0, 0);
+        const bwData = bwCtx.getImageData(0, 0, scW, scH);
+        const d = bwData.data;
+        for (let i = 0; i < d.length; i += 4) {
+          const avg = (d[i] + d[i+1] + d[i+2]) / 3;
+          const v = avg > thresh ? 0 : 255;
+          d[i] = v; d[i+1] = v; d[i+2] = v;
+        }
+        bwCtx.putImageData(bwData, 0, 0);
 
-      for (let i = 0; i < d.length; i += 4) {
-        const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
-        const v = (avg > 130) ? 0 : 255;
-        d[i] = v; d[i + 1] = v; d[i + 2] = v;
+        // Blob 寬度分析（識別 "1" vs 其他）
+        const rawData = bwCtx.getImageData(0, 0, scW, scH);
+        const blobResult = estimateDigitByBlobWidth(rawData, scW, scH, thresh);
+        if (blobResult === 1) {
+          bestQuant = 1; bestConf = 95;
+          console.log(`[Card ${c+1}] thresh=${thresh} BlobWidth => 1`);
+          break;
+        }
+
+        // PSM 7 (single line)
+        await worker.setParameters({ tessedit_char_whitelist: '0123456789xX', tessedit_pageseg_mode: '7' });
+        const res7 = await worker.recognize(bwCanvas);
+        const text7 = (res7.data.text || '').trim();
+        const conf7 = (res7.data.words && res7.data.words.length > 0) ? res7.data.words[0].confidence : 0;
+
+        // PSM 8 (single word)
+        await worker.setParameters({ tessedit_char_whitelist: '0123456789xX', tessedit_pageseg_mode: '8' });
+        const res8 = await worker.recognize(bwCanvas);
+        const text8 = (res8.data.text || '').trim();
+        const conf8 = (res8.data.words && res8.data.words.length > 0) ? res8.data.words[0].confidence : 0;
+
+        console.log(`[Card ${c+1}] thresh=${thresh} PSM7="${text7}"(${conf7.toFixed(0)}) PSM8="${text8}"(${conf8.toFixed(0)})`);
+
+        const useText = conf7 >= conf8 ? text7 : text8;
+        const useConf = Math.max(conf7, conf8);
+
+        if (useConf > bestConf) {
+          const mX = useText.match(/[xX]\s*(\d{1,4})/);
+          const mD = useText.match(/(\d{1,4})/);
+          const parsed = mX ? parseInt(mX[1], 10) : (mD ? parseInt(mD[1], 10) : null);
+          if (parsed !== null) { bestConf = useConf; bestQuant = parsed; }
+        }
       }
-      scCtx.putImageData(scData, 0, 0);
 
-      // OCR 讀取此卡片獨立的 x[數字]
-      const cardRes = await worker.recognize(singleCardCanvas);
-      const cardText = cardRes.data.text.trim();
-
-      // 嘗試多種匹配模式
-      let cardQuant = 0;
-      const matchX = cardText.match(/[xX]\s*(\d{1,4})/);
-      const matchDigit = cardText.match(/(\d{1,4})/);
-      if (matchX) {
-        cardQuant = parseInt(matchX[1], 10);
-      } else if (matchDigit) {
-        cardQuant = parseInt(matchDigit[1], 10);
-      } else {
-        cardQuant = 1; // 至少有 1 個
-      }
-
-      console.log(`[Card ${c+1}] Type: ${cardItemType}, OCR: "${cardText}", Quant: ${cardQuant}`);
-
-      // 累加（同類道具可能出現在多張卡片）
+      const cardQuant = (bestQuant !== null && bestQuant > 0) ? bestQuant : 1;
+      console.log(`[Card ${c+1}] FINAL => ${cardItemType} x${cardQuant}`);
       detectedCounts[cardItemType] += cardQuant;
     }
 
-    console.log('[Card Level Final Detected Item Counts]', detectedCounts);
+    console.log('[Final Item Counts]', detectedCounts);
 
-    // 填入左側 Form 輸入框
     if (inputItemCore) inputItemCore.value = detectedCounts.core;
     if (inputItemSolFragment) inputItemSolFragment.value = detectedCounts.solFragment;
     if (inputItemSolEnergy) inputItemSolEnergy.value = detectedCounts.solEnergy;
     if (inputItemWeakEnergy) inputItemWeakEnergy.value = detectedCounts.weakEnergy;
 
-    // 恢復 Worker 為通用模式 (以免影響後續使用)
-    await worker.setParameters({
-      tessedit_pageseg_mode: '6'
-    });
-
+    await worker.setParameters({ tessedit_pageseg_mode: '6' });
     updateCalculations();
   }
 
