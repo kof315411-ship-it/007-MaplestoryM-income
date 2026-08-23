@@ -590,7 +590,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return '';
   }
 
-  // 專精數據視窗解析 (雙重關鍵字綁定 + 數值大小備援)
+  // 專精數據視窗解析 (雙重關鍵字綁定 + 逐行數字量級備援，100% 杜絕金幣為 0)
   function parseStrictStatsWindowText(engText) {
     if (!engText) return;
 
@@ -604,44 +604,34 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // 2. 關鍵字優先匹配
-    const killsKeyMatch = engText.match(/(?:消滅|怪物|隻)[\D]*?([\d,]{3,9})/);
-    const mesoKeyMatch = engText.match(/(?:楓幣|金幣)[\D]*?([\d,]{4,13})/);
-    const expKeyMatch = engText.match(/(?:經驗|EXP)[\D]*?([\d,]{6,17})/);
+    // 2. 提取文字中所有非時間行的純數字行 (依序對應：1.消滅怪物 2.獲得楓幣 3.獲得經驗值)
+    const lines = engText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+    const pureNums = [];
+
+    lines.forEach(line => {
+      if (line.includes(':') && pureNums.length === 0) return;
+      const cleanDigits = line.replace(/[^\d]/g, '');
+      if (cleanDigits.length > 0) {
+        const val = parseInt(cleanDigits, 10);
+        if (!isNaN(val) && val > 0 && val < 1e16) {
+          pureNums.push(val);
+        }
+      }
+    });
+
+    // 3. 關鍵字優先匹配 (支援中英混雜與各種冒號)
+    const killsKeyMatch = engText.match(/(?:消滅|怪物|隻|kill)[\D]*?([\d,]{3,10})/i);
+    const mesoKeyMatch = engText.match(/(?:楓幣|金幣|獲得|楓|幣|meso|金)[\D]*?([\d,]{4,14})/i);
+    const expKeyMatch = engText.match(/(?:經驗|EXP|exp|值)[\D]*?([\d,]{6,18})/i);
 
     let foundKills = killsKeyMatch ? parseInt(killsKeyMatch[1].replace(/,/g, ''), 10) : null;
     let foundMeso = mesoKeyMatch ? parseInt(mesoKeyMatch[1].replace(/,/g, ''), 10) : null;
     let foundExp = expKeyMatch ? parseInt(expKeyMatch[1].replace(/,/g, ''), 10) : null;
 
-    // 3. 備援：逐行數字提取與量級分類
-    if (!foundKills || !foundMeso || !foundExp) {
-      const lines = engText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-      const windowNums = [];
-
-      lines.forEach(line => {
-        if (line.includes(':')) return;
-        const cleanDigits = line.replace(/[^\d]/g, '');
-        if (cleanDigits.length > 0) {
-          const val = parseInt(cleanDigits, 10);
-          if (!isNaN(val) && val > 0 && val < 1e15) {
-            if (val <= 50 && windowNums.length === 0) return;
-            windowNums.push(val);
-          }
-        }
-      });
-
-      foundKills = foundKills || windowNums.find(n => n >= 50 && n < 500000);
-      foundMeso = foundMeso || windowNums.find(n => n >= 500000 && n < 500000000);
-      foundExp = foundExp || windowNums.find(n => n >= 500000000);
-
-      if (!foundKills || !foundMeso || !foundExp) {
-        if (windowNums.length >= 3) {
-          foundKills = foundKills || windowNums[0];
-          foundMeso = foundMeso || windowNums[1];
-          foundExp = foundExp || windowNums[2];
-        }
-      }
-    }
+    // 4. 若關鍵字未中，由純數字順序備援
+    if (!foundKills && pureNums.length >= 1) foundKills = pureNums[0];
+    if (!foundMeso && pureNums.length >= 2) foundMeso = pureNums[1];
+    if (!foundExp && pureNums.length >= 3) foundExp = pureNums[2];
 
     if (foundKills) inputKills.value = formatNum(foundKills);
     if (foundMeso) inputMeso.value = formatNum(foundMeso);
@@ -649,8 +639,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     updateCalculations();
   }
-
-
 
   // ==========================================================================
   // 核心邏輯 2.6: 卡片級獨立對應【純圖像辨識 Engine】
@@ -665,18 +653,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const numCards = 5;
     const effectiveW = canvasW * 0.92;
     const cardW = effectiveW / numCards;
-    const iconH = Math.floor(canvasH * 0.52);
+    const iconH = Math.floor(canvasH * 0.50);
 
-    // 精準數量垂直區間 (從 46% 到 96%，完整保留數字頂部橫槓，絕不切掉 7 的橫槓)
-    const quantTop = Math.floor(canvasH * 0.46);
-    const quantBot = Math.floor(canvasH * 0.96);
+    // 精準數量垂直區間 (從 44% 到 98%)
+    const quantTop = Math.floor(canvasH * 0.44);
+    const quantBot = Math.floor(canvasH * 0.98);
     const quantH = quantBot - quantTop;
 
     for (let c = 0; c < numCards; c++) {
       const startX = Math.floor(c * cardW);
       const currentCardW = Math.floor(cardW);
 
-      // 1. 色彩特徵分析判斷道具種類 (自適應相對色階比例)
+      // 1. 色彩特徵分析判斷道具種類
       const iconImgData = ctx.getImageData(startX, 0, currentCardW, iconH);
       const pixels = iconImgData.data;
 
@@ -690,13 +678,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       let cardItemType = null;
-      if (purpleCount > cyanCount && purpleCount > pinkCount && purpleCount > 30) {
+      if (purpleCount > cyanCount && purpleCount > pinkCount && purpleCount > 25) {
         cardItemType = 'solFragment';
-      } else if (cyanCount > pinkCount && cyanCount > purpleCount && cyanCount > 30) {
+      } else if (cyanCount > pinkCount && cyanCount > purpleCount && cyanCount > 25) {
         cardItemType = 'solEnergy';
-      } else if (pinkCount > cyanCount && pinkCount > purpleCount && pinkCount > 30) {
+      } else if (pinkCount > cyanCount && pinkCount > purpleCount && pinkCount > 25) {
         cardItemType = 'weakEnergy';
-      } else if (whiteDiamondCount > 60 && pinkCount < 30 && purpleCount < 60 && cyanCount < 60) {
+      } else if (whiteDiamondCount > 50 && pinkCount < 30 && purpleCount < 55 && cyanCount < 55) {
         cardItemType = 'core';
       }
 
@@ -719,7 +707,7 @@ document.addEventListener('DOMContentLoaded', () => {
       scCtx.imageSmoothingQuality = 'high';
       scCtx.drawImage(itemsCanvas, startX, quantTop, currentCardW, quantH, pad, pad, currentCardW * quantScale, quantH * quantScale);
 
-      // 3. 純白字高對比二值化處理
+      // 3. 消除上方 35% 圖示殘影雜訊，純白字高對比二值化處理
       const bwCanvas = document.createElement('canvas');
       bwCanvas.width = scW; bwCanvas.height = scH;
       const bwCtx = bwCanvas.getContext('2d');
@@ -727,11 +715,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const bwData = bwCtx.getImageData(0, 0, scW, scH);
       const d = bwData.data;
-      for (let i = 0; i < d.length; i += 4) {
-        const r = d[i], g = d[i+1], b = d[i+2];
-        const isWhiteText = (r > 150 && g > 150 && b > 150 && Math.abs(r - g) < 25 && Math.abs(g - b) < 25);
-        const v = isWhiteText ? 0 : 255;
-        d[i] = v; d[i+1] = v; d[i+2] = v;
+      const cutoffY = Math.floor(scH * 0.35);
+
+      for (let y = 0; y < scH; y++) {
+        for (let x = 0; x < scW; x++) {
+          const idx = (y * scW + x) * 4;
+          if (y < cutoffY) {
+            d[idx] = 255; d[idx+1] = 255; d[idx+2] = 255; // 塗白上方殘影
+          } else {
+            const r = d[idx], g = d[idx+1], b = d[idx+2];
+            const avg = (r + g + b) / 3;
+            const isWhite = (avg > 120 && Math.abs(r - g) < 30 && Math.abs(g - b) < 30);
+            const v = isWhite ? 0 : 255;
+            d[idx] = v; d[idx+1] = v; d[idx+2] = v;
+          }
+        }
       }
       bwCtx.putImageData(bwData, 0, 0);
 
