@@ -643,7 +643,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================================================
-  // 核心邏輯 2.6: 卡片級獨立對應【純圖像與黑底數量辨識 Engine】
+  // 核心邏輯 2.6: 直觀整體辨識【整排 5 卡片道具與 X 數字單行讀取 Engine】
   // ==========================================================================
   async function detectCardLevelItemDrops(itemsCanvas, worker) {
     const ctx = itemsCanvas.getContext('2d');
@@ -656,18 +656,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const effectiveW = canvasW * 0.92;
     const cardW = effectiveW / numCards;
 
-    // 上半部圖示 (0% ~ 50%)
-    const iconH = Math.floor(canvasH * 0.50);
-    // 底下黑灰底數量區塊 (專注在 55% ~ 96%，排除上方所有圖示色彩干擾)
-    const quantTop = Math.floor(canvasH * 0.55);
-    const quantBot = Math.floor(canvasH * 0.96);
-    const quantH = quantBot - quantTop;
+    // 1. 先直觀判定 5 張卡片的道具類型
+    const cardTypes = [];
+    const iconH = Math.floor(canvasH * 0.52);
 
     for (let c = 0; c < numCards; c++) {
       const startX = Math.floor(c * cardW);
       const currentCardW = Math.floor(cardW);
 
-      // 1. 色彩特徵分析判斷道具種類 (精準分離 4 大道具與其他雜項)
       const iconImgData = ctx.getImageData(startX, 0, currentCardW, iconH);
       const pixels = iconImgData.data;
 
@@ -680,75 +676,73 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (b > 130 && g > 120 && r < 100) nodestoneSpikes++;
       }
 
-      let cardItemType = null;
+      let type = null;
       if (nodestoneSpikes >= 20 && pinkSphere === 0) {
-        cardItemType = 'core'; // 核心寶石 (白色晶石群+深青藍外框)
+        type = 'core'; // 核心寶石
       } else if (pinkSphere >= 35) {
-        cardItemType = 'weakEnergy'; // 微弱靈魂艾爾達斯氣息 (粉紫能量球)
+        type = 'weakEnergy'; // 微弱氣息
       } else if (purpleNebula > 40) {
-        cardItemType = 'solFragment'; // 靈魂艾爾達斯碎片 (深紫星雲晶體)
+        type = 'solFragment'; // 碎片
       } else if (tealSphere > 30 && pinkSphere < 30) {
-        cardItemType = 'solEnergy'; // 靈魂艾爾達斯氣息 (青綠能量球)
+        type = 'solEnergy'; // 氣息
       }
 
-      console.log(`[Card ${c+1}] purple=${purpleNebula} teal=${tealSphere} pink=${pinkSphere} nodestone=${nodestoneSpikes} => ${cardItemType || 'SKIP'}`);
-      if (!cardItemType) continue;
+      cardTypes.push(type);
+      console.log(`[Direct Card ${c+1}] type=${type || 'OTHER'}`);
+    }
 
-      // 2. 專注底層黑灰底 "x 數字" 區域 (純黑灰底、純白文字高對比處理)
-      const quantScale = 6;
-      const pad = 20;
-      const scW = currentCardW * quantScale + pad * 2;
-      const scH = quantH * quantScale + pad * 2;
+    // 2. 直觀拉遠看：整排 "x數字" 單行直接 OCR 辨識
+    // 截取整排底部純文字行（canvasH 的 62% 到 96%）
+    const quantTop = Math.floor(canvasH * 0.62);
+    const quantH = Math.floor(canvasH * 0.34);
 
-      const baseCanvas = document.createElement('canvas');
-      baseCanvas.width = scW;
-      baseCanvas.height = scH;
-      const scCtx = baseCanvas.getContext('2d');
-      scCtx.fillStyle = '#FFFFFF';
-      scCtx.fillRect(0, 0, scW, scH);
-      scCtx.imageSmoothingEnabled = false; // 保持像素銳利
-      scCtx.drawImage(itemsCanvas, startX, quantTop, currentCardW, quantH, pad, pad, currentCardW * quantScale, quantH * quantScale);
+    const lineCanvas = document.createElement('canvas');
+    const scale = 2.0; // 輕度放大，維持原生字形
+    const pad = 15;
+    lineCanvas.width = Math.floor(effectiveW * scale + pad * 2);
+    lineCanvas.height = Math.floor(quantH * scale + pad * 2);
 
-      // 3. 純白字二值化 (白文字轉純黑，黑灰底轉純白)
-      const bwCanvas = document.createElement('canvas');
-      bwCanvas.width = scW; bwCanvas.height = scH;
-      const bwCtx = bwCanvas.getContext('2d');
-      bwCtx.drawImage(baseCanvas, 0, 0);
+    const lineCtx = lineCanvas.getContext('2d');
+    lineCtx.fillStyle = '#FFFFFF';
+    lineCtx.fillRect(0, 0, lineCanvas.width, lineCanvas.height);
+    lineCtx.imageSmoothingEnabled = false;
+    lineCtx.drawImage(itemsCanvas, 0, quantTop, effectiveW, quantH, pad, pad, effectiveW * scale, quantH * scale);
 
-      const bwData = bwCtx.getImageData(0, 0, scW, scH);
-      const d = bwData.data;
+    // 純文字黑白化
+    const lineData = lineCtx.getImageData(0, 0, lineCanvas.width, lineCanvas.height);
+    const d = lineData.data;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i], g = d[i+1], b = d[i+2];
+      const isWhiteText = (r > 125 && g > 125 && b > 125 && Math.abs(r - g) < 25 && Math.abs(g - b) < 25);
+      const v = isWhiteText ? 0 : 255;
+      d[i] = v; d[i+1] = v; d[i+2] = v;
+    }
+    lineCtx.putImageData(lineData, 0, 0);
 
-      for (let i = 0; i < d.length; i += 4) {
-        const r = d[i], g = d[i+1], b = d[i+2];
-        const isWhiteText = (r > 130 && g > 130 && b > 130 && Math.abs(r - g) < 25 && Math.abs(g - b) < 25);
-        const v = isWhiteText ? 0 : 255;
-        d[i] = v; d[i+1] = v; d[i+2] = v;
+    // 3. 整體單行 OCR
+    await worker.setParameters({
+      tessedit_char_whitelist: '0123456789xX ',
+      tessedit_pageseg_mode: '7'
+    });
+
+    const rowRes = await worker.recognize(lineCanvas);
+    const rowText = (rowRes.data.text || '').trim();
+    console.log('[Direct Entire Items Row OCR]:', rowText);
+
+    // 抓取整排中的所有 "x數字" 或純數字 (例如 "x7 x1 x10 x1 x6")
+    const matches = Array.from(rowText.matchAll(/[xX]?\s*(\d{1,4})/g)).map(m => parseInt(m[1], 10)).filter(n => !isNaN(n));
+    console.log('[Extracted Row Quantities]:', matches);
+
+    for (let c = 0; c < numCards; c++) {
+      const itemType = cardTypes[c];
+      if (!itemType) continue; // 不計其他道具 (例如 x6)
+
+      let quant = 1;
+      if (matches.length > c) {
+        quant = matches[c];
       }
-      bwCtx.putImageData(bwData, 0, 0);
-
-      // 4. OCR 辨識 x 數字 (限定字符 whitelist 與 PSM 7 單行模式)
-      await worker.setParameters({
-        tessedit_char_whitelist: '0123456789xX',
-        tessedit_pageseg_mode: '7'
-      });
-
-      const res = await worker.recognize(bwCanvas);
-      const rawOCRText = (res.data.text || '').trim();
-
-      let cardQuant = 0;
-      const matchX = rawOCRText.match(/[xX]\s*(\d{1,4})/);
-      const matchDigit = rawOCRText.match(/(\d{1,4})/);
-
-      if (matchX) {
-        cardQuant = parseInt(matchX[1], 10);
-      } else if (matchDigit) {
-        cardQuant = parseInt(matchDigit[1], 10);
-      } else {
-        cardQuant = 1;
-      }
-
-      console.log(`[Card ${c+1}] Type: ${cardItemType}, OCR: "${rawOCRText}", Final Quant: ${cardQuant}`);
-      detectedCounts[cardItemType] += cardQuant;
+      detectedCounts[itemType] += quant;
+      console.log(`[Assign Drop] Card ${c+1}: ${itemType} = ${quant}`);
     }
 
     console.log('[Final Item Counts]', detectedCounts);
