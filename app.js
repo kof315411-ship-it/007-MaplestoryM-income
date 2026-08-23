@@ -650,49 +650,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCalculations();
   }
 
-  // 量測二值化影像中最後一個文字 blob 的寬度，窄 blob = "1"，寬 blob = 其他數字
-  function estimateDigitByBlobWidth(imgData, canvasW, canvasH, thresh) {
-    const data = imgData.data;
-    const topSkip = Math.floor(canvasH * 0.15);
-    const botSkip = Math.floor(canvasH * 0.85);
 
-    // 掃描每欄是否有亮像素
-    const colHasBright = [];
-    for (let col = 0; col < canvasW; col++) {
-      let hasBright = false;
-      for (let row = topSkip; row < botSkip; row++) {
-        const idx = (row * canvasW + col) * 4;
-        const avg = (data[idx] + data[idx+1] + data[idx+2]) / 3;
-        if (avg > thresh) { hasBright = true; break; }
-      }
-      colHasBright.push(hasBright);
-    }
-
-    // 找連通段 blobs
-    const blobs = [];
-    let blobStart = -1;
-    for (let col = 0; col < canvasW; col++) {
-      if (colHasBright[col] && blobStart === -1) blobStart = col;
-      else if (!colHasBright[col] && blobStart !== -1) {
-        blobs.push(col - blobStart);
-        blobStart = -1;
-      }
-    }
-    if (blobStart !== -1) blobs.push(canvasW - blobStart);
-
-    // 濾掉太小雜點
-    const sigBlobs = blobs.filter(w => w >= 3);
-    if (sigBlobs.length === 0) return -1;
-
-    // 取最後一個 blob（數字部分）
-    const digitW = sigBlobs[sigBlobs.length - 1];
-    const relW = digitW / canvasW;
-    console.log(`[BlobWidth] blobs=${JSON.stringify(sigBlobs)}, digitW=${digitW}, relW=${relW.toFixed(3)}`);
-
-    // 在 8x 放大下，"1" 的 relW < 0.15，其他數字 > 0.20
-    if (relW < 0.16) return 1;
-    return -1; // 需要 OCR 決定
-  }
 
   // ==========================================================================
   // 核心邏輯 2.6: 卡片級獨立對應【純圖像辨識 Engine】
@@ -707,16 +665,18 @@ document.addEventListener('DOMContentLoaded', () => {
     const numCards = 5;
     const effectiveW = canvasW * 0.92;
     const cardW = effectiveW / numCards;
-    const iconH = Math.floor(canvasH * 0.55);
-    // 從 60% 開始取，確保包含完整的 x數字 標籤
-    const quantTop = Math.floor(canvasH * 0.60);
-    const quantH = canvasH - quantTop;
+    const iconH = Math.floor(canvasH * 0.52);
+
+    // 精準數量垂直區間 (從 46% 到 96%，完整保留數字頂部橫槓，絕不切掉 7 的橫槓)
+    const quantTop = Math.floor(canvasH * 0.46);
+    const quantBot = Math.floor(canvasH * 0.96);
+    const quantH = quantBot - quantTop;
 
     for (let c = 0; c < numCards; c++) {
       const startX = Math.floor(c * cardW);
       const currentCardW = Math.floor(cardW);
 
-      // 1. 色彩分析判斷道具種類
+      // 1. 色彩特徵分析判斷道具種類 (自適應相對色階比例)
       const iconImgData = ctx.getImageData(startX, 0, currentCardW, iconH);
       const pixels = iconImgData.data;
 
@@ -726,21 +686,26 @@ document.addEventListener('DOMContentLoaded', () => {
         if (g > 170 && b > 170 && r < 200) cyanCount++;
         else if (r > 170 && b > 170 && g < 210 && r > g) pinkCount++;
         else if (b > 120 && r > 60 && r < 160 && g < 150) purpleCount++;
-        else if (r > 210 && g > 210 && b > 210) whiteDiamondCount++;
+        else if (r > 200 && g > 200 && b > 200) whiteDiamondCount++;
       }
 
       let cardItemType = null;
-      if (purpleCount > cyanCount && purpleCount > pinkCount && purpleCount > 150) cardItemType = 'solFragment';
-      else if (cyanCount > pinkCount && cyanCount > purpleCount && cyanCount > 150) cardItemType = 'solEnergy';
-      else if (pinkCount > cyanCount && pinkCount > purpleCount && pinkCount > 120) cardItemType = 'weakEnergy';
-      else if (whiteDiamondCount > 300 && pinkCount < 80) cardItemType = 'core';
+      if (purpleCount > cyanCount && purpleCount > pinkCount && purpleCount > 30) {
+        cardItemType = 'solFragment';
+      } else if (cyanCount > pinkCount && cyanCount > purpleCount && cyanCount > 30) {
+        cardItemType = 'solEnergy';
+      } else if (pinkCount > cyanCount && pinkCount > purpleCount && pinkCount > 30) {
+        cardItemType = 'weakEnergy';
+      } else if (whiteDiamondCount > 60 && pinkCount < 30 && purpleCount < 60 && cyanCount < 60) {
+        cardItemType = 'core';
+      }
 
       console.log(`[Card ${c+1}] cyan=${cyanCount} pink=${pinkCount} purple=${purpleCount} white=${whiteDiamondCount} => ${cardItemType || 'SKIP'}`);
       if (!cardItemType) continue;
 
-      // 2. 建立 8x 放大量數 canvas（白底）
-      const quantScale = 8;
-      const pad = 30;
+      // 2. 建立 5x 放大量數 canvas（白底）
+      const quantScale = 5;
+      const pad = 25;
       const scW = currentCardW * quantScale + pad * 2;
       const scH = quantH * quantScale + pad * 2;
 
@@ -750,63 +715,48 @@ document.addEventListener('DOMContentLoaded', () => {
       const scCtx = baseCanvas.getContext('2d');
       scCtx.fillStyle = '#FFFFFF';
       scCtx.fillRect(0, 0, scW, scH);
-      scCtx.imageSmoothingEnabled = false;
+      scCtx.imageSmoothingEnabled = true;
+      scCtx.imageSmoothingQuality = 'high';
       scCtx.drawImage(itemsCanvas, startX, quantTop, currentCardW, quantH, pad, pad, currentCardW * quantScale, quantH * quantScale);
 
-      // 3. 多閾值策略 (100, 115, 130)
-      let bestQuant = null;
-      let bestConf = -1;
+      // 3. 純白字高對比二值化處理
+      const bwCanvas = document.createElement('canvas');
+      bwCanvas.width = scW; bwCanvas.height = scH;
+      const bwCtx = bwCanvas.getContext('2d');
+      bwCtx.drawImage(baseCanvas, 0, 0);
 
-      for (const thresh of [100, 115, 130]) {
-        const bwCanvas = document.createElement('canvas');
-        bwCanvas.width = scW; bwCanvas.height = scH;
-        const bwCtx = bwCanvas.getContext('2d');
-        bwCtx.drawImage(baseCanvas, 0, 0);
-        const bwData = bwCtx.getImageData(0, 0, scW, scH);
-        const d = bwData.data;
-        for (let i = 0; i < d.length; i += 4) {
-          const avg = (d[i] + d[i+1] + d[i+2]) / 3;
-          const v = avg > thresh ? 0 : 255;
-          d[i] = v; d[i+1] = v; d[i+2] = v;
-        }
-        bwCtx.putImageData(bwData, 0, 0);
+      const bwData = bwCtx.getImageData(0, 0, scW, scH);
+      const d = bwData.data;
+      for (let i = 0; i < d.length; i += 4) {
+        const r = d[i], g = d[i+1], b = d[i+2];
+        const isWhiteText = (r > 150 && g > 150 && b > 150 && Math.abs(r - g) < 25 && Math.abs(g - b) < 25);
+        const v = isWhiteText ? 0 : 255;
+        d[i] = v; d[i+1] = v; d[i+2] = v;
+      }
+      bwCtx.putImageData(bwData, 0, 0);
 
-        // Blob 寬度分析（識別 "1" vs 其他）
-        const rawData = bwCtx.getImageData(0, 0, scW, scH);
-        const blobResult = estimateDigitByBlobWidth(rawData, scW, scH, thresh);
-        if (blobResult === 1) {
-          bestQuant = 1; bestConf = 95;
-          console.log(`[Card ${c+1}] thresh=${thresh} BlobWidth => 1`);
-          break;
-        }
+      // 4. OCR 辨識 x 數字
+      await worker.setParameters({
+        tessedit_char_whitelist: '0123456789xX',
+        tessedit_pageseg_mode: '7'
+      });
 
-        // PSM 7 (single line)
-        await worker.setParameters({ tessedit_char_whitelist: '0123456789xX', tessedit_pageseg_mode: '7' });
-        const res7 = await worker.recognize(bwCanvas);
-        const text7 = (res7.data.text || '').trim();
-        const conf7 = (res7.data.words && res7.data.words.length > 0) ? res7.data.words[0].confidence : 0;
+      const res = await worker.recognize(bwCanvas);
+      const rawOCRText = (res.data.text || '').trim();
 
-        // PSM 8 (single word)
-        await worker.setParameters({ tessedit_char_whitelist: '0123456789xX', tessedit_pageseg_mode: '8' });
-        const res8 = await worker.recognize(bwCanvas);
-        const text8 = (res8.data.text || '').trim();
-        const conf8 = (res8.data.words && res8.data.words.length > 0) ? res8.data.words[0].confidence : 0;
+      let cardQuant = 0;
+      const matchX = rawOCRText.match(/[xX]\s*(\d{1,4})/);
+      const matchDigit = rawOCRText.match(/(\d{1,4})/);
 
-        console.log(`[Card ${c+1}] thresh=${thresh} PSM7="${text7}"(${conf7.toFixed(0)}) PSM8="${text8}"(${conf8.toFixed(0)})`);
-
-        const useText = conf7 >= conf8 ? text7 : text8;
-        const useConf = Math.max(conf7, conf8);
-
-        if (useConf > bestConf) {
-          const mX = useText.match(/[xX]\s*(\d{1,4})/);
-          const mD = useText.match(/(\d{1,4})/);
-          const parsed = mX ? parseInt(mX[1], 10) : (mD ? parseInt(mD[1], 10) : null);
-          if (parsed !== null) { bestConf = useConf; bestQuant = parsed; }
-        }
+      if (matchX) {
+        cardQuant = parseInt(matchX[1], 10);
+      } else if (matchDigit) {
+        cardQuant = parseInt(matchDigit[1], 10);
+      } else {
+        cardQuant = 1;
       }
 
-      const cardQuant = (bestQuant !== null && bestQuant > 0) ? bestQuant : 1;
-      console.log(`[Card ${c+1}] FINAL => ${cardItemType} x${cardQuant}`);
+      console.log(`[Card ${c+1}] Type: ${cardItemType}, OCR Text: "${rawOCRText}", Final Quant: ${cardQuant}`);
       detectedCounts[cardItemType] += cardQuant;
     }
 
