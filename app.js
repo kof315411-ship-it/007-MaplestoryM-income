@@ -1,13 +1,13 @@
 /* ==========================================================================
-   楓之谷M 掛機收益分析與全圖/局部截圖自動辨識工具 - JavaScript 邏輯引擎 (v8.0)
+   楓之谷M 掛機收益分析與全圖/局部截圖自動辨識工具 - JavaScript 邏輯引擎 (v9.0)
    ========================================================================== */
 
 document.addEventListener('DOMContentLoaded', () => {
   // --- 註冊 Service Worker 實現跨裝置 PWA 離線支援 ---
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js')
-      .then(reg => console.log('[Service Worker v8] Registered successfully:', reg.scope))
-      .catch(err => console.log('[Service Worker v8] Registration skipped:', err));
+      .then(reg => console.log('[Service Worker v9] Registered successfully:', reg.scope))
+      .catch(err => console.log('[Service Worker v9] Registration skipped:', err));
   }
 
   // --- DOM 元素引用 ---
@@ -189,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
   updateCalculations();
 
   // ==========================================================================
-  // 核心邏輯 1: 數值解析與即時計算 (含特別道具)
+  // 核心邏輯 1: 數值解析與即時計算
   // ==========================================================================
 
   function getTargetHoursValue() {
@@ -330,7 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================================================
-  // 核心邏輯 2: 全圖截圖與特別道具圖像辨識 (純圖像特徵辨識，完全不依賴位置)
+  // 核心邏輯 2: 全圖截圖與特別道具圖像辨識 (卡片精確分割 + 雙通道分析)
   // ==========================================================================
 
   async function handleImageUpload(file) {
@@ -354,13 +354,15 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const whiteNumCanvas = createAdaptiveWhiteNumbersCanvas(img);
       const mapCanvas = createFilteredMapCanvas(img);
-      const itemsCanvas = createItemsCanvas(img);
+
+      // 精確裁切主要獲得獎勵道具欄 (含彩色圖示與數量)
+      const { itemsCanvas, itemQuantBwCanvas } = createItemsCanvas(img);
 
       // Worker 1: 專門辨識數據視窗 (ENG 純數字)
       const workerEng = await Tesseract.createWorker('eng', 1, {
         logger: m => {
           if (m.status === 'recognizing text') {
-            const progress = Math.round(m.progress * 40);
+            const progress = Math.round(m.progress * 35);
             ocrStatusText.textContent = `🔍 辨識數據中... (${progress}%)`;
             ocrPercentText.textContent = `${progress}%`;
             ocrProgressBar.style.width = `${progress}%`;
@@ -373,46 +375,64 @@ document.addEventListener('DOMContentLoaded', () => {
         tessedit_pageseg_mode: '6'
       });
 
-      // Worker 2: 辨識戰場名稱與道具 x 數量
+      // Worker 2: 辨識戰場名稱
       const workerChi = await Tesseract.createWorker('eng+chi_tra', 1, {
         logger: m => {
           if (m.status === 'recognizing text') {
-            const progress = 40 + Math.round(m.progress * 50);
-            ocrStatusText.textContent = `🔍 解析戰場與道具... (${progress}%)`;
+            const progress = 35 + Math.round(m.progress * 35);
+            ocrStatusText.textContent = `🔍 解析戰場資訊... (${progress}%)`;
             ocrPercentText.textContent = `${progress}%`;
             ocrProgressBar.style.width = `${progress}%`;
           }
         }
       });
 
+      // Worker 3: 專門辨識道具方塊下方的 x [數字] 數量
+      const workerQuant = await Tesseract.createWorker('eng', 1, {
+        logger: m => {
+          if (m.status === 'recognizing text') {
+            const progress = 70 + Math.round(m.progress * 30);
+            ocrStatusText.textContent = `🔍 讀取道具數量... (${progress}%)`;
+            ocrPercentText.textContent = `${progress}%`;
+            ocrProgressBar.style.width = `${progress}%`;
+          }
+        }
+      });
+
+      await workerQuant.setParameters({
+        tessedit_char_whitelist: '0123456789xX ',
+        tessedit_pageseg_mode: '6'
+      });
+
       // 執行辨識
       const numRes = await workerEng.recognize(whiteNumCanvas);
       const mapRes = await workerChi.recognize(mapCanvas);
-      const itemsRes = await workerChi.recognize(itemsCanvas);
+      const quantRes = await workerQuant.recognize(itemQuantBwCanvas);
       const rawRes = await workerChi.recognize(img);
 
       await workerEng.terminate();
       await workerChi.terminate();
+      await workerQuant.terminate();
 
       const numText = numRes.data.text;
       const mapText = mapRes.data.text;
-      const itemsText = itemsRes.data.text;
+      const quantText = quantRes.data.text;
       const rawText = rawRes.data.text;
 
       console.log('=== Pure Numbers OCR ===\n', numText);
-      console.log('=== Items OCR ===\n', itemsText);
+      console.log('=== Item Quantities OCR ===\n', quantText);
 
-      // 1. 解析戰場名稱 (星力、神秘之力、真實之力)
+      // 1. 解析戰場名稱
       const mapName = parseMapName(mapText + '\n' + rawText);
       if (mapName) {
         inputMapName.value = mapName;
       }
 
-      // 2. 帶入基礎 4 行數據 (時間、殺怪、楓幣、經驗)
+      // 2. 帶入基礎 4 行數據
       parseStrictStatsWindowText(numText, rawText);
 
-      // 3. 純圖像特徵辨識：分析 4 種特別掉落道具 (不依賴位置，只看圖像特徵 + 下方 x 數字)
-      detectSpecialItemDropsByImage(itemsCanvas, itemsText);
+      // 3. 卡片雙通道辨識：圖示特徵辨識 + x 數量獨立對應
+      detectCardLevelItemDrops(itemsCanvas, quantText);
 
       ocrStatusText.textContent = '✅ 數據、戰場與道具辨識完成';
       ocrPercentText.textContent = '100%';
@@ -506,35 +526,56 @@ document.addEventListener('DOMContentLoaded', () => {
     return canvas;
   }
 
-  // 裁切主要獲得獎勵區域 Canvas
+  // 裁切主要獲得獎勵道具欄 (同時輸出彩色圖示 Canvas 與 高對比純白字數量 Canvas)
   function createItemsCanvas(img) {
     const isWide = (img.width / img.height) > 1.3;
 
     let x, y, w, h;
     if (isWide) {
-      x = Math.floor(img.width * 0.01);
-      y = Math.floor(img.height * 0.44);
-      w = Math.floor(img.width * 0.45);
-      h = Math.floor(img.height * 0.35);
+      x = Math.floor(img.width * 0.015);
+      y = Math.floor(img.height * 0.45);
+      w = Math.floor(img.width * 0.185);
+      h = Math.floor(img.height * 0.10);
     } else {
       x = Math.floor(img.width * 0.01);
       y = Math.floor(img.height * 0.48);
-      w = Math.floor(img.width * 0.85);
-      h = Math.floor(img.height * 0.40);
+      w = Math.floor(img.width * 0.65);
+      h = Math.floor(img.height * 0.15);
     }
 
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    const scale = 2.5;
+    // 1. 彩色圖示 Canvas
+    const itemsCanvas = document.createElement('canvas');
+    const ctx = itemsCanvas.getContext('2d');
+    const scale = 3.0;
 
-    canvas.width = Math.floor(w * scale);
-    canvas.height = Math.floor(h * scale);
+    itemsCanvas.width = Math.floor(w * scale);
+    itemsCanvas.height = Math.floor(h * scale);
 
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(img, x, y, w, h, 0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, x, y, w, h, 0, 0, itemsCanvas.width, itemsCanvas.height);
 
-    return canvas;
+    // 2. 高對比黑底白字數量 Canvas (專門給 Tesseract 讀取 x 數字)
+    const quantH = Math.floor(itemsCanvas.height * 0.45);
+    const itemQuantBwCanvas = document.createElement('canvas');
+    itemQuantBwCanvas.width = itemsCanvas.width;
+    itemQuantBwCanvas.height = quantH;
+
+    const qCtx = itemQuantBwCanvas.getContext('2d');
+    qCtx.drawImage(itemsCanvas, 0, itemsCanvas.height - quantH, itemsCanvas.width, quantH, 0, 0, itemsCanvas.width, quantH);
+
+    const qImgData = qCtx.getImageData(0, 0, itemsCanvas.width, quantH);
+    const qData = qImgData.data;
+
+    for (let i = 0; i < qData.length; i += 4) {
+      const r = qData[i], g = qData[i + 1], b = qData[i + 2];
+      const isWhiteText = (r > 150 && g > 150 && b > 150);
+      const v = isWhiteText ? 0 : 255; // 白字轉純黑背景上的黑字 (Tesseract 相容)
+      qData[i] = v; qData[i + 1] = v; qData[i + 2] = v;
+    }
+    qCtx.putImageData(qImgData, 0, 0);
+
+    return { itemsCanvas, itemQuantBwCanvas };
   }
 
   // 三大戰場名稱解析
@@ -561,7 +602,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const reqVal = reqMatch ? (reqMatch[1] || reqMatch[2]) : '400';
 
       const mapMatch = cleanText.match(/([大哥無名啾啾拉契阿爾莫拉艾斯][^\s<>]{2,12}(?:地盤|村|島|街|深處|\d)?)/);
-      const mapName = mapMatch ? mapNameMatch[1] : '大哥的地盤2';
+      const mapName = mapMatch ? mapMatch[1] : '大哥的地盤2';
       return `神秘之力 ${reqVal} - ${mapName}`;
     }
 
@@ -633,22 +674,20 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================================================
-  // 核心邏輯 2.6: 特別掉落道具【純圖像特徵辨識 Engine】 (不使用位置，只看圖像特徵)
+  // 核心邏輯 2.6: 卡片級獨立對應【純圖像辨識 Engine】
   // (1. 靈魂艾爾達斯碎片  2. 靈魂艾爾達斯氣息  3. 微弱靈魂艾爾達斯氣息  4. 核心寶石)
   // ==========================================================================
-  function detectSpecialItemDropsByImage(itemsCanvas, itemsText) {
+  function detectCardLevelItemDrops(itemsCanvas, quantText) {
     const ctx = itemsCanvas.getContext('2d');
     const canvasW = itemsCanvas.width;
     const canvasH = itemsCanvas.height;
 
-    // 1. 先從 OCR 文字中提取所有 x [數字] 數量
-    const matches = Array.from(itemsText.matchAll(/[xX✕×]\s*(\d{1,4})/g));
+    // 1. 解析整排所有的 x [數字] 數量
+    const matches = Array.from(quantText.matchAll(/[xX✕×\s]*(\d{1,4})/g));
     const extractedQuantities = matches.map(m => parseInt(m[1], 10)).filter(n => !isNaN(n) && n > 0);
 
-    console.log('[Extracted Quantities (x 數字)]', extractedQuantities);
+    console.log('[Card Quantities Extracted]', extractedQuantities);
 
-    // 2. 切分割候選道具卡片框 (最多 4 個道具方塊)
-    // 動態掃描 Canvas 尋找 4 個獨立道具卡片的圖示特徵
     let detectedCounts = {
       core: 0,
       solFragment: 0,
@@ -656,69 +695,50 @@ document.addEventListener('DOMContentLoaded', () => {
       weakEnergy: 0
     };
 
-    // 將 Canvas 切分為最多 4 個水平區塊進行圖像色域檢測
-    const numCols = Math.min(4, Math.max(1, extractedQuantities.length || 4));
-    const colW = canvasW / numCols;
+    // 2. 切分為最多 5 個水平卡片方塊進行卡片級圖像特徵辨識
+    const numCards = 5;
+    const cardW = canvasW / numCards;
+    const iconH = Math.floor(canvasH * 0.58);
 
-    for (let c = 0; c < numCols; c++) {
-      const startX = Math.floor(c * colW);
-      const endX = Math.floor((c + 1) * colW);
-      const iconH = Math.floor(canvasH * 0.65); // 圖示上半部分
+    for (let c = 0; c < numCards; c++) {
+      const startX = Math.floor(c * cardW);
+      const cardCropW = Math.floor(cardW);
 
-      const iconImgData = ctx.getImageData(startX, 0, Math.max(1, endX - startX), iconH);
+      const iconImgData = ctx.getImageData(startX, 0, cardCropW, iconH);
       const pixels = iconImgData.data;
 
-      let cyanCount = 0;        // 靈魂艾爾達斯氣息 (青綠色)
-      let pinkCount = 0;        // 微弱靈魂艾爾達斯氣息 (淡粉紫色)
-      let purpleCount = 0;      // 靈魂艾爾達斯碎片 (深紫藍漩渦)
-      let whiteDiamondCount = 0; // 核心寶石 (白鑽石晶體)
+      let cyanCount = 0;        // 靈魂艾爾達斯氣息
+      let pinkCount = 0;        // 微弱靈魂艾爾達斯氣息
+      let purpleCount = 0;      // 靈魂艾爾達斯碎片
+      let whiteDiamondCount = 0; // 核心寶石
 
       for (let p = 0; p < pixels.length; p += 4) {
         const r = pixels[p], g = pixels[p + 1], b = pixels[p + 2];
 
-        // 青綠色氣息 (Sol Erda Energy)
-        if (g > 175 && b > 175 && r < 200) {
-          cyanCount++;
-        }
-        // 淡粉紫氣息 (Weak Sol Erda Energy)
-        else if (r > 175 && b > 175 && g < 210 && r > g) {
-          pinkCount++;
-        }
-        // 深紫藍漩渦 (Sol Erda Fragment)
-        else if (b > 120 && r > 60 && r < 160 && g < 150) {
-          purpleCount++;
-        }
-        // 白鑽石晶體 (Nodestone)
-        else if (r > 210 && g > 210 && b > 210) {
-          whiteDiamondCount++;
-        }
+        if (g > 170 && b > 170 && r < 200) cyanCount++;
+        else if (r > 170 && b > 170 && g < 210 && r > g) pinkCount++;
+        else if (b > 120 && r > 60 && r < 160 && g < 150) purpleCount++;
+        else if (r > 210 && g > 210 && b > 210) whiteDiamondCount++;
       }
 
-      console.log(`[Col ${c+1} Icon Classifier] Purple:${purpleCount}, Cyan:${cyanCount}, Pink:${pinkCount}, WhiteDiamond:${whiteDiamondCount}`);
+      console.log(`[Card ${c+1} Classifier] Purple:${purpleCount}, Cyan:${cyanCount}, Pink:${pinkCount}, WhiteDiamond:${whiteDiamondCount}`);
 
-      // 判斷此區塊屬於哪種道具
-      const qVal = extractedQuantities[c] || 1;
+      // 取出該位置對應的 x 數量 (若沒抓到則預設為 1)
+      const qVal = (c < extractedQuantities.length) ? extractedQuantities[c] : 1;
 
-      // 特徵分類規則：
-      // 1. 靈魂艾爾達斯碎片：Purple 最高
-      if (purpleCount > cyanCount && purpleCount > pinkCount && purpleCount > 50) {
+      // 判斷此卡片屬於哪種道具
+      if (purpleCount > cyanCount && purpleCount > pinkCount && purpleCount > 200) {
         detectedCounts.solFragment = qVal;
-      }
-      // 2. 靈魂艾爾達斯氣息：Cyan 最高
-      else if (cyanCount > pinkCount && cyanCount > purpleCount && cyanCount > 50) {
+      } else if (cyanCount > pinkCount && cyanCount > purpleCount && cyanCount > 200) {
         detectedCounts.solEnergy = qVal;
-      }
-      // 3. 微弱靈魂艾爾達斯氣息：Pink 最高
-      else if (pinkCount > cyanCount && pinkCount > purpleCount && pinkCount > 30) {
+      } else if (pinkCount > cyanCount && pinkCount > purpleCount && pinkCount > 150) {
         detectedCounts.weakEnergy = qVal;
-      }
-      // 4. 核心寶石：WhiteDiamond 最高且 Pink 為 0
-      else if (whiteDiamondCount > 100 && pinkCount === 0) {
+      } else if (whiteDiamondCount > 400 && pinkCount < 100) {
         detectedCounts.core = qVal;
       }
     }
 
-    console.log('[Detected Item Counts by Image Recognition]', detectedCounts);
+    console.log('[Card Level Final Detected Item Counts]', detectedCounts);
 
     // 填入左側 Form 輸入框
     if (inputItemCore) inputItemCore.value = detectedCounts.core;
@@ -830,7 +850,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================================================
-  // 核心邏輯 4: 歷史紀錄與比較 (含特別道具)
+  // 核心邏輯 4: 歷史紀錄與比較
   // ==========================================================================
 
   function saveRecord() {
