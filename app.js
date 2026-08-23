@@ -1,13 +1,13 @@
 /* ==========================================================================
-   楓之谷M 掛機收益分析與全圖/局部截圖自動辨識工具 - JavaScript 邏輯引擎
+   楓之谷M 掛機收益分析與全圖/局部截圖自動辨識工具 - JavaScript 邏輯引擎 (v8.0)
    ========================================================================== */
 
 document.addEventListener('DOMContentLoaded', () => {
   // --- 註冊 Service Worker 實現跨裝置 PWA 離線支援 ---
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js')
-      .then(reg => console.log('[Service Worker v6] Registered successfully:', reg.scope))
-      .catch(err => console.log('[Service Worker v6] Registration skipped:', err));
+      .then(reg => console.log('[Service Worker v8] Registered successfully:', reg.scope))
+      .catch(err => console.log('[Service Worker v8] Registration skipped:', err));
   }
 
   // --- DOM 元素引用 ---
@@ -28,9 +28,14 @@ document.addEventListener('DOMContentLoaded', () => {
   const inputMeso = document.getElementById('inputMeso');
   const inputExp = document.getElementById('inputExp');
 
+  // 特別掉落道具 Input
+  const inputItemCore = document.getElementById('inputItemCore');
+  const inputItemSolFragment = document.getElementById('inputItemSolFragment');
+  const inputItemSolEnergy = document.getElementById('inputItemSolEnergy');
+  const inputItemWeakEnergy = document.getElementById('inputItemWeakEnergy');
+
   const selectTargetHours = document.getElementById('selectTargetHours');
   const inputCustomHours = document.getElementById('inputCustomHours');
-  const headerTargetHours = document.getElementById('headerTargetHours');
 
   // 表格儲存格
   const cellRawTime = document.getElementById('cellRawTime');
@@ -50,6 +55,27 @@ document.addEventListener('DOMContentLoaded', () => {
   const cellHourlyExp = document.getElementById('cellHourlyExp');
   const cellTargetExp = document.getElementById('cellTargetExp');
   const cellDailyExp = document.getElementById('cellDailyExp');
+
+  // 特別掉落道具表格
+  const cellRawCore = document.getElementById('cellRawCore');
+  const cellHourlyCore = document.getElementById('cellHourlyCore');
+  const cellTargetCore = document.getElementById('cellTargetCore');
+  const cellDailyCore = document.getElementById('cellDailyCore');
+
+  const cellRawSolFragment = document.getElementById('cellRawSolFragment');
+  const cellHourlySolFragment = document.getElementById('cellHourlySolFragment');
+  const cellTargetSolFragment = document.getElementById('cellTargetSolFragment');
+  const cellDailySolFragment = document.getElementById('cellDailySolFragment');
+
+  const cellRawSolEnergy = document.getElementById('cellRawSolEnergy');
+  const cellHourlySolEnergy = document.getElementById('cellHourlySolEnergy');
+  const cellTargetSolEnergy = document.getElementById('cellTargetSolEnergy');
+  const cellDailySolEnergy = document.getElementById('cellDailySolEnergy');
+
+  const cellRawWeakEnergy = document.getElementById('cellRawWeakEnergy');
+  const cellHourlyWeakEnergy = document.getElementById('cellHourlyWeakEnergy');
+  const cellTargetWeakEnergy = document.getElementById('cellTargetWeakEnergy');
+  const cellDailyWeakEnergy = document.getElementById('cellDailyWeakEnergy');
 
   // 效益統計卡片
   const statMesoPer10k = document.getElementById('statMesoPer10k');
@@ -106,8 +132,8 @@ document.addEventListener('DOMContentLoaded', () => {
   renderHistoryTable();
 
   // --- 即時觸發計算事件監聽 ---
-  [inputTime, inputKills, inputMeso, inputExp, inputCustomHours].forEach(el => {
-    el.addEventListener('input', updateCalculations);
+  [inputTime, inputKills, inputMeso, inputExp, inputItemCore, inputItemSolFragment, inputItemSolEnergy, inputItemWeakEnergy, inputCustomHours].forEach(el => {
+    if (el) el.addEventListener('input', updateCalculations);
   });
 
   selectTargetHours.addEventListener('change', () => {
@@ -163,7 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
   updateCalculations();
 
   // ==========================================================================
-  // 核心邏輯 1: 數值解析與即時計算
+  // 核心邏輯 1: 數值解析與即時計算 (含特別道具)
   // ==========================================================================
 
   function getTargetHoursValue() {
@@ -215,59 +241,84 @@ document.addEventListener('DOMContentLoaded', () => {
     const rawMeso = parseNumber(inputMeso.value);
     const rawExp = parseNumber(inputExp.value);
 
+    // 特別道具數量
+    const rawCore = parseNumber(inputItemCore.value);
+    const rawSolFragment = parseNumber(inputItemSolFragment.value);
+    const rawSolEnergy = parseNumber(inputItemSolEnergy.value);
+    const rawWeakEnergy = parseNumber(inputItemWeakEnergy.value);
+
     const seconds = parseTimeToSeconds(rawTimeStr);
     const elapsedHours = seconds > 0 ? (seconds / 3600) : 0;
     const targetHours = getTargetHoursValue();
 
     // 更新目標時數 Header
     const targetLabel = `${targetHours} 小時`;
-    headerTargetHours.textContent = targetLabel;
+    document.querySelectorAll('.headerTargetHours').forEach(el => {
+      el.textContent = targetLabel;
+    });
 
-    // 原始欄位同步顯示
+    // 基礎原始欄位顯示
     cellRawTime.textContent = `${rawTimeStr} (${(seconds / 60).toFixed(1)}分)`;
     cellRawKills.textContent = `${formatNum(rawKills)} 隻`;
     cellRawMeso.textContent = formatNum(rawMeso);
     cellRawExp.textContent = formatNum(rawExp);
 
+    // 特別道具原始欄位顯示
+    cellRawCore.textContent = `${formatNum(rawCore)} 個`;
+    cellRawSolFragment.textContent = `${formatNum(rawSolFragment)} 個`;
+    cellRawSolEnergy.textContent = `${formatNum(rawSolEnergy)} 個`;
+    cellRawWeakEnergy.textContent = `${formatNum(rawWeakEnergy)} 個`;
+
     // 每小時平均
-    let hourlyKills = 0;
-    let hourlyMeso = 0;
-    let hourlyExp = 0;
+    let hourlyKills = 0, hourlyMeso = 0, hourlyExp = 0;
+    let hourlyCore = 0, hourlySolFragment = 0, hourlySolEnergy = 0, hourlyWeakEnergy = 0;
 
     if (elapsedHours > 0) {
       hourlyKills = rawKills / elapsedHours;
       hourlyMeso = rawMeso / elapsedHours;
       hourlyExp = rawExp / elapsedHours;
+
+      hourlyCore = rawCore / elapsedHours;
+      hourlySolFragment = rawSolFragment / elapsedHours;
+      hourlySolEnergy = rawSolEnergy / elapsedHours;
+      hourlyWeakEnergy = rawWeakEnergy / elapsedHours;
     }
 
     cellHourlyKills.textContent = `${formatNum(hourlyKills)} 隻`;
     cellHourlyMeso.textContent = formatNum(hourlyMeso);
     cellHourlyExp.textContent = `${formatNum(hourlyExp)} (${formatCompact(hourlyExp)})`;
 
-    // 目標時數累積
-    const targetKills = hourlyKills * targetHours;
-    const targetMeso = hourlyMeso * targetHours;
-    const targetExp = hourlyExp * targetHours;
+    cellHourlyCore.textContent = `${formatNum(hourlyCore, 2)} 個`;
+    cellHourlySolFragment.textContent = `${formatNum(hourlySolFragment, 2)} 個`;
+    cellHourlySolEnergy.textContent = `${formatNum(hourlySolEnergy, 2)} 個`;
+    cellHourlyWeakEnergy.textContent = `${formatNum(hourlyWeakEnergy, 2)} 個`;
 
+    // 目標時數累積
     cellTargetTime.textContent = `${targetHours.toFixed(1)} 小時`;
-    cellTargetKills.textContent = `${formatNum(targetKills)} 隻`;
-    cellTargetMeso.textContent = formatNum(targetMeso);
-    cellTargetExp.textContent = `${formatNum(targetExp)} (${formatCompact(targetExp)})`;
+    cellTargetKills.textContent = `${formatNum(hourlyKills * targetHours)} 隻`;
+    cellTargetMeso.textContent = formatNum(hourlyMeso * targetHours);
+    cellTargetExp.textContent = `${formatNum(hourlyExp * targetHours)} (${formatCompact(hourlyExp * targetHours)})`;
+
+    cellTargetCore.textContent = `${formatNum(hourlyCore * targetHours, 1)} 個`;
+    cellTargetSolFragment.textContent = `${formatNum(hourlySolFragment * targetHours, 1)} 個`;
+    cellTargetSolEnergy.textContent = `${formatNum(hourlySolEnergy * targetHours, 1)} 個`;
+    cellTargetWeakEnergy.textContent = `${formatNum(hourlyWeakEnergy * targetHours, 1)} 個`;
 
     // 24小時預估 (日收益)
-    const dailyKills = hourlyKills * 24;
-    const dailyMeso = hourlyMeso * 24;
-    const dailyExp = hourlyExp * 24;
+    cellDailyKills.textContent = `${formatNum(hourlyKills * 24)} 隻`;
+    cellDailyMeso.textContent = formatNum(hourlyMeso * 24);
+    cellDailyExp.textContent = `${formatNum(hourlyExp * 24)} (${formatCompact(hourlyExp * 24)})`;
 
-    cellDailyKills.textContent = `${formatNum(dailyKills)} 隻`;
-    cellDailyMeso.textContent = formatNum(dailyMeso);
-    cellDailyExp.textContent = `${formatNum(dailyExp)} (${formatCompact(dailyExp)})`;
+    cellDailyCore.textContent = `${formatNum(hourlyCore * 24, 1)} 個`;
+    cellDailySolFragment.textContent = `${formatNum(hourlySolFragment * 24, 1)} 個`;
+    cellDailySolEnergy.textContent = `${formatNum(hourlySolEnergy * 24, 1)} 個`;
+    cellDailyWeakEnergy.textContent = `${formatNum(hourlyWeakEnergy * 24, 1)} 個`;
 
     // 效益指標
     const mesoPer10k = rawKills > 0 ? (rawMeso / rawKills) * 10000 : 0;
     const expPer10k = rawKills > 0 ? (rawExp / rawKills) * 10000 : 0;
     const killsPerMin = seconds > 0 ? (rawKills / (seconds / 60)) : 0;
-    const monthlyMeso = dailyMeso * 30;
+    const monthlyMeso = hourlyMeso * 24 * 30;
 
     statMesoPer10k.textContent = formatNum(mesoPer10k);
     statExpPer10k.textContent = formatCompact(expPer10k);
@@ -279,7 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================================================
-  // 核心邏輯 2: 純白字數據視窗與三大戰場名稱對應
+  // 核心邏輯 2: 全圖截圖與特別道具圖像辨識 (純圖像特徵辨識，完全不依賴位置)
   // ==========================================================================
 
   async function handleImageUpload(file) {
@@ -294,22 +345,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function runMultiEngineOCR(imageSource) {
     ocrProgressBox.style.display = 'block';
-    ocrStatusText.textContent = '🚀 分析處理中...';
+    ocrStatusText.textContent = '🚀 啟動圖像與數據分析...';
     ocrPercentText.textContent = '0%';
     ocrProgressBar.style.width = '0%';
 
     try {
       const img = await loadImage(imageSource);
       
-      // 100% 獨立隔離左側 4 行數據視窗與右上角戰場資訊
       const whiteNumCanvas = createAdaptiveWhiteNumbersCanvas(img);
       const mapCanvas = createFilteredMapCanvas(img);
+      const itemsCanvas = createItemsCanvas(img);
 
-      // Worker 1: 專門辨識白字數值 (ENG 純數字 PSM 6 單區塊模式)
+      // Worker 1: 專門辨識數據視窗 (ENG 純數字)
       const workerEng = await Tesseract.createWorker('eng', 1, {
         logger: m => {
           if (m.status === 'recognizing text') {
-            const progress = Math.round(m.progress * 50);
+            const progress = Math.round(m.progress * 40);
             ocrStatusText.textContent = `🔍 辨識數據中... (${progress}%)`;
             ocrPercentText.textContent = `${progress}%`;
             ocrProgressBar.style.width = `${progress}%`;
@@ -322,12 +373,12 @@ document.addEventListener('DOMContentLoaded', () => {
         tessedit_pageseg_mode: '6'
       });
 
-      // Worker 2: 辨識右上角戰場名稱 (繁體中文)
+      // Worker 2: 辨識戰場名稱與道具 x 數量
       const workerChi = await Tesseract.createWorker('eng+chi_tra', 1, {
         logger: m => {
           if (m.status === 'recognizing text') {
-            const progress = 50 + Math.round(m.progress * 50);
-            ocrStatusText.textContent = `🔍 解析戰場資訊... (${progress}%)`;
+            const progress = 40 + Math.round(m.progress * 50);
+            ocrStatusText.textContent = `🔍 解析戰場與道具... (${progress}%)`;
             ocrPercentText.textContent = `${progress}%`;
             ocrProgressBar.style.width = `${progress}%`;
           }
@@ -337,6 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // 執行辨識
       const numRes = await workerEng.recognize(whiteNumCanvas);
       const mapRes = await workerChi.recognize(mapCanvas);
+      const itemsRes = await workerChi.recognize(itemsCanvas);
       const rawRes = await workerChi.recognize(img);
 
       await workerEng.terminate();
@@ -344,21 +396,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const numText = numRes.data.text;
       const mapText = mapRes.data.text;
+      const itemsText = itemsRes.data.text;
       const rawText = rawRes.data.text;
 
       console.log('=== Pure Numbers OCR ===\n', numText);
-      console.log('=== Map Panel OCR ===\n', mapText);
+      console.log('=== Items OCR ===\n', itemsText);
 
-      // 解析三大戰場名稱 (星力、神秘之力、真實之力)
+      // 1. 解析戰場名稱 (星力、神秘之力、真實之力)
       const mapName = parseMapName(mapText + '\n' + rawText);
       if (mapName) {
         inputMapName.value = mapName;
       }
 
-      // 僅依據 numText (數據視窗專用 Canvas) 進行精確行與數量級帶入
+      // 2. 帶入基礎 4 行數據 (時間、殺怪、楓幣、經驗)
       parseStrictStatsWindowText(numText, rawText);
 
-      ocrStatusText.textContent = '✅ 數據與戰場辨識完成';
+      // 3. 純圖像特徵辨識：分析 4 種特別掉落道具 (不依賴位置，只看圖像特徵 + 下方 x 數字)
+      detectSpecialItemDropsByImage(itemsCanvas, itemsText);
+
+      ocrStatusText.textContent = '✅ 數據、戰場與道具辨識完成';
       ocrPercentText.textContent = '100%';
       ocrProgressBar.style.width = '100%';
 
@@ -376,19 +432,17 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 精確裁切數據視窗：避開頂部 ⚔️ 6,001,975 戰力與 D-32 徽章
+  // 精確裁切數據視窗
   function createAdaptiveWhiteNumbersCanvas(img) {
     const isWide = (img.width / img.height) > 1.3;
 
     let x, y, w, h;
     if (isWide) {
-      // 16:9 全圖截圖
       x = Math.floor(img.width * 0.01);
       y = Math.floor(img.height * 0.24);
       w = Math.floor(img.width * 0.22);
       h = Math.floor(img.height * 0.23);
     } else {
-      // 局部/方形截圖
       x = Math.floor(img.width * 0.01);
       y = Math.floor(img.height * 0.36);
       w = Math.floor(img.width * 0.58);
@@ -409,23 +463,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const data = imgData.data;
 
-    // 只保留純白色的字體 (即目標白字數值)
     for (let i = 0; i < data.length; i += 4) {
-      const r = data[i];
-      const g = data[i + 1];
-      const b = data[i + 2];
-
+      const r = data[i], g = data[i + 1], b = data[i + 2];
       const isWhiteText = (r > 150 && g > 150 && b > 150 && Math.abs(r - g) < 30 && Math.abs(g - b) < 30);
-
-      if (isWhiteText) {
-        data[i] = 0;
-        data[i + 1] = 0;
-        data[i + 2] = 0;
-      } else {
-        data[i] = 255;
-        data[i + 1] = 255;
-        data[i + 2] = 255;
-      }
+      const v = isWhiteText ? 0 : 255;
+      data[i] = v; data[i + 1] = v; data[i + 2] = v;
     }
     ctx.putImageData(imgData, 0, 0);
     return canvas;
@@ -457,49 +499,73 @@ document.addEventListener('DOMContentLoaded', () => {
 
     for (let i = 0; i < data.length; i += 4) {
       const avg = (data[i] * 0.299 + data[i + 1] * 0.587 + data[i + 2] * 0.114);
-      const isText = avg > 130;
-      const v = isText ? 0 : 255;
-      data[i] = v;
-      data[i + 1] = v;
-      data[i + 2] = v;
+      const v = (avg > 130) ? 0 : 255;
+      data[i] = v; data[i + 1] = v; data[i + 2] = v;
     }
     ctx.putImageData(imgData, 0, 0);
     return canvas;
   }
 
-  // ==========================================================================
-  // 核心邏輯 2.5: 三大戰場名稱精確解析 (星力戰場 / 神秘之力戰場 / 真實之力戰場)
-  // ==========================================================================
+  // 裁切主要獲得獎勵區域 Canvas
+  function createItemsCanvas(img) {
+    const isWide = (img.width / img.height) > 1.3;
+
+    let x, y, w, h;
+    if (isWide) {
+      x = Math.floor(img.width * 0.01);
+      y = Math.floor(img.height * 0.44);
+      w = Math.floor(img.width * 0.45);
+      h = Math.floor(img.height * 0.35);
+    } else {
+      x = Math.floor(img.width * 0.01);
+      y = Math.floor(img.height * 0.48);
+      w = Math.floor(img.width * 0.85);
+      h = Math.floor(img.height * 0.40);
+    }
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const scale = 2.5;
+
+    canvas.width = Math.floor(w * scale);
+    canvas.height = Math.floor(h * scale);
+
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, x, y, w, h, 0, 0, canvas.width, canvas.height);
+
+    return canvas;
+  }
+
+  // 三大戰場名稱解析
   function parseMapName(text) {
     if (!text) return '';
     const cleanText = text.replace(/\n/g, ' ').trim();
 
-    // 1. 判定【真實之力戰場】 (藍紫色六角形 Icon, 例如 < 60 > 王立圖書館第3區域, 150/60)
+    // 1. 判定【真實之力戰場】 (藍紫色六角形 Icon)
     const isAuthentic = /真實|AUT|Aut|圖書館|王立|賽爾尼溫|阿爾克斯|奧狄溫|桃源鄉|卡爾西安|⬡|⬢/.test(cleanText) ||
                         /\d+\s*\/\s*(?:60|30|50|70|90|100|120|150)/.test(cleanText);
     if (isAuthentic) {
-      // 提取要求數值 (如 <60> 或 150/60)
       const reqMatch = cleanText.match(/<\s*[\D]*?(\d{2,3})\s*>|\d+\s*\/\s*(\d{2,3})/);
       const reqVal = reqMatch ? (reqMatch[1] || reqMatch[2]) : '60';
 
-      // 提取地圖名稱
       const mapMatch = cleanText.match(/([王立賽爾阿爾奧狄桃源卡爾][^\s<>]{2,12}(?:區域|街道|海岸|城鎮|地帶|\d)?)/);
       const mapName = mapMatch ? mapMatch[1] : '王立圖書館第3區域';
       return `真實之力 ${reqVal} - ${mapName}`;
     }
 
-    // 2. 判定【神秘之力戰場】 (藍色圓形中間有十字 Icon, 例如 <◆400> 大哥的地盤2)
+    // 2. 判定【神秘之力戰場】 (藍色圓形中間有十字 Icon)
     const isArcane = /神秘|◆|◇|✦|850|400|360|200|160|80|大哥|無名村|啾啾|拉契爾因|阿爾卡娜|莫拉斯|艾斯佩拉/.test(cleanText);
     if (isArcane) {
       const reqMatch = cleanText.match(/<\s*[\D]*?(\d{2,4})\s*>|(\d{3,4})/);
       const reqVal = reqMatch ? (reqMatch[1] || reqMatch[2]) : '400';
 
       const mapMatch = cleanText.match(/([大哥無名啾啾拉契阿爾莫拉艾斯][^\s<>]{2,12}(?:地盤|村|島|街|深處|\d)?)/);
-      const mapName = mapMatch ? mapMatch[1] : '大哥的地盤2';
+      const mapName = mapMatch ? mapNameMatch[1] : '大哥的地盤2';
       return `神秘之力 ${reqVal} - ${mapName}`;
     }
 
-    // 3. 判定【星力戰場】 (紅色圓形中間白色星星 Icon, 例如 <★168> 試煉洞穴1)
+    // 3. 判定【星力戰場】 (紅色圓形中間白色星星 Icon)
     const isStarForce = /星力|★|168|174|144|130|120|80|試煉|洞穴/.test(cleanText);
     if (isStarForce) {
       const reqMatch = cleanText.match(/<\s*[\D]*?(\d{2,3})\s*>|(\d{2,3})/);
@@ -510,7 +576,6 @@ document.addEventListener('DOMContentLoaded', () => {
       return `星力 ${reqVal} - ${mapName}`;
     }
 
-    // 一般萬用備用匹配
     const generalMatch = cleanText.match(/<\s*[\D]*?(\d+)\s*>\s*([^\s<>]{2,12})/);
     if (generalMatch) {
       return `戰場 ${generalMatch[1]} - ${generalMatch[2]}`;
@@ -519,11 +584,10 @@ document.addEventListener('DOMContentLoaded', () => {
     return '';
   }
 
-  // 專精掛機數據視窗解析：完全排除全圖頂部戰力干擾
+  // 專精數據視窗解析
   function parseStrictStatsWindowText(engText, rawText) {
     if (!engText && !rawText) return;
 
-    // 1. 先抓取時間 (HH:MM:SS)
     const combined = engText + '\n' + rawText;
     const timeMatch = combined.match(/(\d{1,2})[:：.](\d{2})[:：.](\d{2})/) || combined.match(/(\d{1,2})[:：.](\d{2})/);
     if (timeMatch) {
@@ -534,7 +598,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // 2. 僅從 engText (掛機數據視窗) 提取數字
     const lines = engText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
     const windowNums = [];
 
@@ -550,7 +613,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    // 3. 雙重分配邏輯：優先按【數量級】鎖定
     let foundKills = windowNums.find(n => n >= 50 && n < 500000);
     let foundMeso = windowNums.find(n => n >= 500000 && n < 500000000);
     let foundExp = windowNums.find(n => n >= 500000000);
@@ -566,6 +628,103 @@ document.addEventListener('DOMContentLoaded', () => {
     if (foundKills) inputKills.value = formatNum(foundKills);
     if (foundMeso) inputMeso.value = formatNum(foundMeso);
     if (foundExp) inputExp.value = formatNum(foundExp);
+
+    updateCalculations();
+  }
+
+  // ==========================================================================
+  // 核心邏輯 2.6: 特別掉落道具【純圖像特徵辨識 Engine】 (不使用位置，只看圖像特徵)
+  // (1. 靈魂艾爾達斯碎片  2. 靈魂艾爾達斯氣息  3. 微弱靈魂艾爾達斯氣息  4. 核心寶石)
+  // ==========================================================================
+  function detectSpecialItemDropsByImage(itemsCanvas, itemsText) {
+    const ctx = itemsCanvas.getContext('2d');
+    const canvasW = itemsCanvas.width;
+    const canvasH = itemsCanvas.height;
+
+    // 1. 先從 OCR 文字中提取所有 x [數字] 數量
+    const matches = Array.from(itemsText.matchAll(/[xX✕×]\s*(\d{1,4})/g));
+    const extractedQuantities = matches.map(m => parseInt(m[1], 10)).filter(n => !isNaN(n) && n > 0);
+
+    console.log('[Extracted Quantities (x 數字)]', extractedQuantities);
+
+    // 2. 切分割候選道具卡片框 (最多 4 個道具方塊)
+    // 動態掃描 Canvas 尋找 4 個獨立道具卡片的圖示特徵
+    let detectedCounts = {
+      core: 0,
+      solFragment: 0,
+      solEnergy: 0,
+      weakEnergy: 0
+    };
+
+    // 將 Canvas 切分為最多 4 個水平區塊進行圖像色域檢測
+    const numCols = Math.min(4, Math.max(1, extractedQuantities.length || 4));
+    const colW = canvasW / numCols;
+
+    for (let c = 0; c < numCols; c++) {
+      const startX = Math.floor(c * colW);
+      const endX = Math.floor((c + 1) * colW);
+      const iconH = Math.floor(canvasH * 0.65); // 圖示上半部分
+
+      const iconImgData = ctx.getImageData(startX, 0, Math.max(1, endX - startX), iconH);
+      const pixels = iconImgData.data;
+
+      let cyanCount = 0;        // 靈魂艾爾達斯氣息 (青綠色)
+      let pinkCount = 0;        // 微弱靈魂艾爾達斯氣息 (淡粉紫色)
+      let purpleCount = 0;      // 靈魂艾爾達斯碎片 (深紫藍漩渦)
+      let whiteDiamondCount = 0; // 核心寶石 (白鑽石晶體)
+
+      for (let p = 0; p < pixels.length; p += 4) {
+        const r = pixels[p], g = pixels[p + 1], b = pixels[p + 2];
+
+        // 青綠色氣息 (Sol Erda Energy)
+        if (g > 175 && b > 175 && r < 200) {
+          cyanCount++;
+        }
+        // 淡粉紫氣息 (Weak Sol Erda Energy)
+        else if (r > 175 && b > 175 && g < 210 && r > g) {
+          pinkCount++;
+        }
+        // 深紫藍漩渦 (Sol Erda Fragment)
+        else if (b > 120 && r > 60 && r < 160 && g < 150) {
+          purpleCount++;
+        }
+        // 白鑽石晶體 (Nodestone)
+        else if (r > 210 && g > 210 && b > 210) {
+          whiteDiamondCount++;
+        }
+      }
+
+      console.log(`[Col ${c+1} Icon Classifier] Purple:${purpleCount}, Cyan:${cyanCount}, Pink:${pinkCount}, WhiteDiamond:${whiteDiamondCount}`);
+
+      // 判斷此區塊屬於哪種道具
+      const qVal = extractedQuantities[c] || 1;
+
+      // 特徵分類規則：
+      // 1. 靈魂艾爾達斯碎片：Purple 最高
+      if (purpleCount > cyanCount && purpleCount > pinkCount && purpleCount > 50) {
+        detectedCounts.solFragment = qVal;
+      }
+      // 2. 靈魂艾爾達斯氣息：Cyan 最高
+      else if (cyanCount > pinkCount && cyanCount > purpleCount && cyanCount > 50) {
+        detectedCounts.solEnergy = qVal;
+      }
+      // 3. 微弱靈魂艾爾達斯氣息：Pink 最高
+      else if (pinkCount > cyanCount && pinkCount > purpleCount && pinkCount > 30) {
+        detectedCounts.weakEnergy = qVal;
+      }
+      // 4. 核心寶石：WhiteDiamond 最高且 Pink 為 0
+      else if (whiteDiamondCount > 100 && pinkCount === 0) {
+        detectedCounts.core = qVal;
+      }
+    }
+
+    console.log('[Detected Item Counts by Image Recognition]', detectedCounts);
+
+    // 填入左側 Form 輸入框
+    if (inputItemCore) inputItemCore.value = detectedCounts.core;
+    if (inputItemSolFragment) inputItemSolFragment.value = detectedCounts.solFragment;
+    if (inputItemSolEnergy) inputItemSolEnergy.value = detectedCounts.solEnergy;
+    if (inputItemWeakEnergy) inputItemWeakEnergy.value = detectedCounts.weakEnergy;
 
     updateCalculations();
   }
@@ -671,7 +830,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================================================
-  // 核心邏輯 4: 歷史紀錄與比較
+  // 核心邏輯 4: 歷史紀錄與比較 (含特別道具)
   // ==========================================================================
 
   function saveRecord() {
@@ -679,6 +838,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const rawKills = parseNumber(inputKills.value);
     const rawMeso = parseNumber(inputMeso.value);
     const rawExp = parseNumber(inputExp.value);
+
+    const rawCore = parseNumber(inputItemCore.value);
+    const rawSolFragment = parseNumber(inputItemSolFragment.value);
+    const rawSolEnergy = parseNumber(inputItemSolEnergy.value);
+    const rawWeakEnergy = parseNumber(inputItemWeakEnergy.value);
+
     const seconds = parseTimeToSeconds(rawTimeStr);
     const elapsedHours = seconds > 0 ? (seconds / 3600) : 0;
 
@@ -690,6 +855,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const hourlyKills = rawKills / elapsedHours;
     const hourlyMeso = rawMeso / elapsedHours;
     const hourlyExp = rawExp / elapsedHours;
+
+    const hourlyCore = rawCore / elapsedHours;
+    const hourlySol = (rawSolFragment + rawSolEnergy + rawWeakEnergy) / elapsedHours;
     const mesoPer10k = rawKills > 0 ? (rawMeso / rawKills) * 10000 : 0;
 
     const record = {
@@ -699,6 +867,8 @@ document.addEventListener('DOMContentLoaded', () => {
       hourlyKills,
       hourlyMeso,
       hourlyExp,
+      hourlyCore,
+      hourlySol,
       mesoPer10k,
       createdAt: new Date().toLocaleString('zh-TW', { hour12: false })
     };
@@ -718,7 +888,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (historyRecords.length === 0) {
       historyTableBody.innerHTML = `
         <tr>
-          <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">
+          <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;">
             尚未儲存任何歷史紀錄。上傳截圖辨識並確認數據後，點擊「儲存至歷史紀錄比較」即可對比效益！
           </td>
         </tr>
@@ -733,7 +903,8 @@ document.addEventListener('DOMContentLoaded', () => {
         <td class="text-cyan">${formatNum(rec.hourlyKills)} 隻/h</td>
         <td class="text-gold" style="font-weight: 700;">${formatNum(rec.hourlyMeso)}</td>
         <td class="text-purple">${formatCompact(rec.hourlyExp)}</td>
-        <td>${formatNum(rec.mesoPer10k)} 楓幣/萬怪</td>
+        <td style="color: #38bdf8; font-weight: 700;">${formatNum(rec.hourlyCore || 0, 1)} 個/h</td>
+        <td style="color: #c084fc; font-weight: 700;">${formatNum(rec.hourlySol || 0, 1)} 個/h</td>
         <td style="font-size: 0.8rem; color: var(--text-muted);">${rec.createdAt}</td>
         <td>
           <button class="btn btn-secondary btn-del-rec" data-id="${rec.id}" style="padding: 4px 8px; font-size: 0.75rem; color: #ef4444;">
@@ -768,9 +939,9 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    let csvContent = "\uFEFF地圖/備註,掛機時間,每小時殺怪(隻),每小時楓幣,每小時經驗值,萬怪楓幣效率,記錄時間\n";
+    let csvContent = "\uFEFF地圖/備註,掛機時間,每小時殺怪(隻),每小時楓幣,每小時經驗值,核心寶石/h,艾爾達斯/h,萬怪楓幣效率,記錄時間\n";
     historyRecords.forEach(r => {
-      csvContent += `"${r.mapName}","${r.timeStr}",${Math.round(r.hourlyKills)},${Math.round(r.hourlyMeso)},${Math.round(r.hourlyExp)},${Math.round(r.mesoPer10k)},"${r.createdAt}"\n`;
+      csvContent += `"${r.mapName}","${r.timeStr}",${Math.round(r.hourlyKills)},${Math.round(r.hourlyMeso)},${Math.round(r.hourlyExp)},${(r.hourlyCore || 0).toFixed(1)},${(r.hourlySol || 0).toFixed(1)},${Math.round(r.mesoPer10k)},"${r.createdAt}"\n`;
     });
 
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });

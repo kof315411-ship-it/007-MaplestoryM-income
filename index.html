@@ -28,13 +28,13 @@
     <!-- Header -->
     <header class="app-header">
       <div class="header-badge">
-        <i class="fa-solid fa-mobile-screen-button"></i> 跨裝置免安裝・全設備通用網頁工具 (v6.0)
+        <i class="fa-solid fa-mobile-screen-button"></i> 跨裝置免安裝・全設備通用網頁工具 (v7.0 道具圖像辨識版)
       </div>
       <h1>
         <i class="fa-solid fa-coins text-gold"></i>
         楓之谷M 掛機收益計算與截圖辨識
       </h1>
-      <p>完全不需要綁定設備！電腦、手機 (iOS / Android)、平板開網頁即用，離線亦可運行</p>
+      <p>完全不需要綁定設備！支援核心寶石、靈魂艾爾達斯碎片/氣息圖像辨識</p>
       
       <div style="margin-top: 14px; display: flex; justify-content: center; gap: 10px; flex-wrap: wrap;">
         <button type="button" class="btn btn-secondary" id="btnShowMobileGuide" style="font-size: 0.85rem;">
@@ -168,6 +168,41 @@
             <input type="text" id="inputExp" class="input-control" placeholder="0" value="">
           </div>
 
+          <!-- Special Dropped Items Form Inputs (圖像辨識/手動修正) -->
+          <div class="item-inputs-section">
+            <div class="item-inputs-title">
+              <i class="fa-solid fa-gem text-cyan"></i> 特別掉落道具數量 (圖像辨識)
+            </div>
+            
+            <div class="form-group">
+              <label class="form-label" for="inputItemCore">
+                <i class="fa-solid fa-gem text-cyan"></i> 核心寶石
+              </label>
+              <input type="number" id="inputItemCore" class="input-control" placeholder="0" min="0" value="0">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="inputItemSolFragment">
+                <i class="fa-solid fa-fire-flame-curved text-purple"></i> 靈魂艾爾達斯碎片
+              </label>
+              <input type="number" id="inputItemSolFragment" class="input-control" placeholder="0" min="0" value="0">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="inputItemSolEnergy">
+                <i class="fa-solid fa-sun text-gold"></i> 靈魂艾爾達斯氣息
+              </label>
+              <input type="number" id="inputItemSolEnergy" class="input-control" placeholder="0" min="0" value="0">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label" for="inputItemWeakEnergy">
+                <i class="fa-solid fa-sparkle text-muted"></i> 微弱靈魂艾爾達斯氣息
+              </label>
+              <input type="number" id="inputItemWeakEnergy" class="input-control" placeholder="0" min="0" value="0">
+            </div>
+          </div>
+
         </div>
 
       </section>
@@ -202,7 +237,7 @@
 
         <h2 class="card-title">
           <span class="title-icon text-gold"><i class="fa-solid fa-table-list"></i></span>
-          收益分析與預估表格
+          基礎收益分析與預估表格
         </h2>
 
         <!-- Calculations Data Table -->
@@ -213,7 +248,7 @@
                 <th>項目 Metric</th>
                 <th>截圖原始數據</th>
                 <th>每 1 小時平均</th>
-                <th><span id="headerTargetHours">6 小時</span>預估累積 <span class="badge-target">目標</span></th>
+                <th><span class="headerTargetHours">6 小時</span>預估累積 <span class="badge-target">目標</span></th>
                 <th>24 小時預估 (日收益)</th>
               </tr>
             </thead>
@@ -261,6 +296,71 @@
                 <td id="cellHourlyExp" class="val-exp-highlight">0</td>
                 <td id="cellTargetExp" class="val-exp-highlight">0</td>
                 <td id="cellDailyExp">0</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Special Item Drops Analytics Table (核心寶石 & 靈魂艾爾達斯) -->
+        <h2 class="card-title" style="margin-top: 24px;">
+          <span class="title-icon text-cyan"><i class="fa-solid fa-gem"></i></span>
+          特別掉落道具收益預估 (圖像辨識)
+        </h2>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>掉落道具 Item</th>
+                <th>截圖獲得數量</th>
+                <th>每 1 小時平均</th>
+                <th><span class="headerTargetHours">6 小時</span>預估累積 <span class="badge-target">目標</span></th>
+                <th>24 小時預估 (日產量)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <span class="metric-name" style="color: #38bdf8;">
+                    <i class="fa-solid fa-gem"></i> 核心寶石
+                  </span>
+                </td>
+                <td id="cellRawCore">0 個</td>
+                <td id="cellHourlyCore" class="val-highlight">0 個</td>
+                <td id="cellTargetCore" class="val-highlight">0 個</td>
+                <td id="cellDailyCore">0 個</td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="metric-name" style="color: #c084fc;">
+                    <i class="fa-solid fa-fire-flame-curved"></i> 靈魂艾爾達斯碎片
+                  </span>
+                </td>
+                <td id="cellRawSolFragment">0 個</td>
+                <td id="cellHourlySolFragment" class="val-exp-highlight">0 個</td>
+                <td id="cellTargetSolFragment" class="val-exp-highlight">0 個</td>
+                <td id="cellDailySolFragment">0 個</td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="metric-name" style="color: #f59e0b;">
+                    <i class="fa-solid fa-sun"></i> 靈魂艾爾達斯氣息
+                  </span>
+                </td>
+                <td id="cellRawSolEnergy">0 個</td>
+                <td id="cellHourlySolEnergy" class="val-highlight">0 個</td>
+                <td id="cellTargetSolEnergy" class="val-highlight">0 個</td>
+                <td id="cellDailySolEnergy">0 個</td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="metric-name" style="color: #94a3b8;">
+                    <i class="fa-solid fa-sparkle"></i> 微弱靈魂艾爾達斯氣息
+                  </span>
+                </td>
+                <td id="cellRawWeakEnergy">0 個</td>
+                <td id="cellHourlyWeakEnergy">0 個</td>
+                <td id="cellTargetWeakEnergy">0 個</td>
+                <td id="cellDailyWeakEnergy">0 個</td>
               </tr>
             </tbody>
           </table>
@@ -342,7 +442,8 @@
               <th>每小時殺怪</th>
               <th>每小時楓幣</th>
               <th>每小時經驗</th>
-              <th>萬怪楓幣效率</th>
+              <th>核心寶石/h</th>
+              <th>艾爾達斯/h</th>
               <th>記錄時間</th>
               <th>操作</th>
             </tr>
@@ -350,7 +451,7 @@
           <tbody id="historyTableBody">
             <!-- Dynamic Rows -->
             <tr>
-              <td colspan="8" style="text-align: center; color: var(--text-muted); padding: 24px;">
+              <td colspan="9" style="text-align: center; color: var(--text-muted); padding: 24px;">
                 尚未儲存任何歷史紀錄。上傳截圖辨識並確認數據後，點擊「儲存至歷史紀錄比較」即可對比效益！
               </td>
             </tr>

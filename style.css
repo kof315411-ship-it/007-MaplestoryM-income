@@ -252,7 +252,7 @@ body {
   box-shadow: 0 6px 20px rgba(168, 85, 247, 0.45);
 }
 
-/* Image Preview & OCR Status (Locked height and overflow) */
+/* Image Preview & OCR Status */
 .preview-container {
   display: none;
   flex-direction: column;
@@ -316,7 +316,7 @@ body {
   transition: width 0.3s ease;
 }
 
-/* Form Controls (Fixed 1-Column Layout to Prevent Shifting) */
+/* Form Controls */
 .form-grid-fixed {
   display: flex;
   flex-direction: column;
@@ -365,6 +365,25 @@ select.input-control {
 select.input-control option {
   background: var(--bg-dark);
   color: var(--text-main);
+}
+
+/* Item Inputs Sub-section */
+.item-inputs-section {
+  margin-top: 10px;
+  padding-top: 14px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.item-inputs-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #38bdf8;
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* Target Hours Highlight Selector Box */
