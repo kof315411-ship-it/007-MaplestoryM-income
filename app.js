@@ -330,7 +330,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================================================
-  // 核心邏輯 2: 單一高效 OCR 引擎 (穩定無崩潰，支援手機與全裝置)
+  // 核心邏輯 2: 全圖截圖 (圖1) 與 彈窗特寫截圖 (圖2) 雙模式自動辨識 (v14.0)
   // ==========================================================================
 
   async function handleImageUpload(file) {
@@ -353,12 +353,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       const img = await loadImage(imageSource);
+      // 依長寬比判斷截圖類型：圖1全螢幕(寬高比>1.45)，圖2局部彈窗(寬高比<=1.45)
+      const isFullScreen = (img.width / img.height) > 1.45;
       
-      const whiteNumCanvas = createAdaptiveWhiteNumbersCanvas(img);
-      const { mapCanvas, mapColorType } = createFilteredMapCanvas(img);
-      const itemsCanvas = createItemsCanvas(img);
+      const whiteNumCanvas = createAdaptiveWhiteNumbersCanvas(img, isFullScreen);
+      const mapResult = isFullScreen ? createFilteredMapCanvas(img) : null;
+      const itemsCanvas = createItemsCanvas(img, isFullScreen);
 
-      ocrStatusText.textContent = '⏳ 載入多國語系引擎... (20%)';
+      ocrStatusText.textContent = isFullScreen
+        ? '⏳ 分析全螢幕截圖數據與戰場... (20%)'
+        : '⏳ 分析彈窗特寫數據與道具... (20%)';
       ocrPercentText.textContent = '20%';
       ocrProgressBar.style.width = '20%';
 
@@ -374,26 +378,27 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
 
-      // 1. 辨識左側 4 行數據
+      // 1. 辨識 4 行主要數據 (進行時間、消滅怪物、獲得楓幣、獲得經驗值)
       const numRes = await worker.recognize(whiteNumCanvas);
       const numText = numRes.data.text;
-      console.log('=== Pure Numbers OCR ===\n', numText);
+      console.log('=== Stats Window OCR ===\n', numText);
 
-      // 2. 辨識右上角戰場名稱
-      const mapRes = await worker.recognize(mapCanvas);
-      const mapText = mapRes.data.text;
-      console.log('=== Map Panel OCR ===\n', mapText);
+      // 2. 如果是全螢幕截圖 (圖1)，辨識右上角戰場名稱；如果是彈窗特寫 (圖2)，不辨識戰場名稱
+      if (isFullScreen && mapResult && mapResult.mapCanvas) {
+        const mapRes = await worker.recognize(mapResult.mapCanvas);
+        const mapText = mapRes.data.text;
+        console.log('=== Map Panel OCR ===\n', mapText);
 
-      // 解析戰場名稱
-      const mapName = parseMapName(mapText, mapColorType);
-      if (mapName) {
-        inputMapName.value = mapName;
+        const mapName = parseMapName(mapText, mapResult.mapColorType);
+        if (mapName) {
+          inputMapName.value = mapName;
+        }
       }
 
       // 解析時間、殺怪、楓幣、經驗
       parseStrictStatsWindowText(numText);
 
-      // 3. 卡片級圖像與數量辨識
+      // 3. 卡片級圖像與數量辨識 (支援圖1與圖2)
       await detectCardLevelItemDrops(itemsCanvas, worker);
 
       await worker.terminate();
@@ -419,21 +424,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 精確裁切數據視窗
-  function createAdaptiveWhiteNumbersCanvas(img) {
-    const isWide = (img.width / img.height) > 1.3;
-
+  // 精確裁切數據視窗 (支援圖1全螢幕與圖2彈窗特寫)
+  function createAdaptiveWhiteNumbersCanvas(img, isFullScreen) {
     let x, y, w, h;
-    if (isWide) {
+    if (isFullScreen) {
+      // 圖1: 全螢幕截圖左側數據視窗
       x = Math.floor(img.width * 0.01);
       y = Math.floor(img.height * 0.24);
       w = Math.floor(img.width * 0.22);
       h = Math.floor(img.height * 0.23);
     } else {
+      // 圖2: 局部彈窗特寫數據視窗 (上半部)
       x = Math.floor(img.width * 0.01);
-      y = Math.floor(img.height * 0.36);
-      w = Math.floor(img.width * 0.58);
-      h = Math.floor(img.height * 0.35);
+      y = Math.floor(img.height * 0.01);
+      w = Math.floor(img.width * 0.98);
+      h = Math.floor(img.height * 0.54);
     }
 
     const canvas = document.createElement('canvas');
@@ -451,31 +456,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const data = imgData.data;
 
     for (let i = 0; i < data.length; i += 4) {
-      const r = data[i], g = data[i + 1], b = data[i + 2];
-      const isWhiteText = (r > 150 && g > 150 && b > 150 && Math.abs(r - g) < 30 && Math.abs(g - b) < 30);
-      const v = isWhiteText ? 0 : 255;
+      const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
+      const v = (avg > 115) ? 0 : 255;
       data[i] = v; data[i + 1] = v; data[i + 2] = v;
     }
     ctx.putImageData(imgData, 0, 0);
     return canvas;
   }
 
-  // 生成右上角戰場名稱 Canvas
+  // 生成右上角戰場名稱 Canvas (僅用於圖1全螢幕)
   function createFilteredMapCanvas(img) {
-    const isWide = (img.width / img.height) > 1.3;
-
-    let x, y, w, h;
-    if (isWide) {
-      x = Math.floor(img.width * 0.70);
-      y = Math.floor(img.height * 0.07);
-      w = Math.floor(img.width * 0.29);
-      h = Math.floor(img.height * 0.14);
-    } else {
-      x = Math.floor(img.width * 0.35);
-      y = 0;
-      w = Math.floor(img.width * 0.65);
-      h = Math.floor(img.height * 0.25);
-    }
+    const x = Math.floor(img.width * 0.70);
+    const y = Math.floor(img.height * 0.07);
+    const w = Math.floor(img.width * 0.29);
+    const h = Math.floor(img.height * 0.14);
 
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
@@ -515,21 +509,21 @@ document.addEventListener('DOMContentLoaded', () => {
     return { mapCanvas: canvas, mapColorType };
   }
 
-  // 裁切主要獲得獎勵道具欄
-  function createItemsCanvas(img) {
-    const isWide = (img.width / img.height) > 1.3;
-
+  // 裁切主要獲得獎勵道具欄 (支援圖1全螢幕與圖2彈窗特寫)
+  function createItemsCanvas(img, isFullScreen) {
     let x, y, w, h;
-    if (isWide) {
+    if (isFullScreen) {
+      // 圖1: 全螢幕截圖道具欄
       x = Math.floor(img.width * 0.015);
       y = Math.floor(img.height * 0.46);
       w = Math.floor(img.width * 0.185);
       h = Math.floor(img.height * 0.10);
     } else {
-      x = Math.floor(img.width * 0.01);
-      y = Math.floor(img.height * 0.48);
-      w = Math.floor(img.width * 0.65);
-      h = Math.floor(img.height * 0.15);
+      // 圖2: 局部彈窗特寫截圖道具欄 (精確鎖定 5 個卡片方塊)
+      x = Math.floor(img.width * 0.06);
+      y = Math.floor(img.height * 0.70);
+      w = Math.floor(img.width * 0.86);
+      h = Math.floor(img.height * 0.26);
     }
 
     const itemsCanvas = document.createElement('canvas');
@@ -596,10 +590,11 @@ document.addEventListener('DOMContentLoaded', () => {
     return '';
   }
 
-  // 專精數據視窗解析
+  // 專精數據視窗解析 (雙重關鍵字綁定 + 數值大小備援)
   function parseStrictStatsWindowText(engText) {
     if (!engText) return;
 
+    // 1. 時間解析
     const timeMatch = engText.match(/(\d{1,2})[:：.](\d{2})[:：.](\d{2})/) || engText.match(/(\d{1,2})[:：.](\d{2})/);
     if (timeMatch) {
       if (timeMatch.length === 4) {
@@ -609,30 +604,42 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    const lines = engText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    const windowNums = [];
+    // 2. 關鍵字優先匹配
+    const killsKeyMatch = engText.match(/(?:消滅|怪物|隻)[\D]*?([\d,]{3,9})/);
+    const mesoKeyMatch = engText.match(/(?:楓幣|金幣)[\D]*?([\d,]{4,13})/);
+    const expKeyMatch = engText.match(/(?:經驗|EXP)[\D]*?([\d,]{6,17})/);
 
-    lines.forEach(line => {
-      if (line.includes(':')) return;
-      const cleanDigits = line.replace(/[^\d]/g, '');
-      if (cleanDigits.length > 0) {
-        const val = parseInt(cleanDigits, 10);
-        if (!isNaN(val) && val > 0 && val < 1e15) {
-          if (val <= 50 && windowNums.length === 0) return;
-          windowNums.push(val);
-        }
-      }
-    });
+    let foundKills = killsKeyMatch ? parseInt(killsKeyMatch[1].replace(/,/g, ''), 10) : null;
+    let foundMeso = mesoKeyMatch ? parseInt(mesoKeyMatch[1].replace(/,/g, ''), 10) : null;
+    let foundExp = expKeyMatch ? parseInt(expKeyMatch[1].replace(/,/g, ''), 10) : null;
 
-    let foundKills = windowNums.find(n => n >= 50 && n < 500000);
-    let foundMeso = windowNums.find(n => n >= 500000 && n < 500000000);
-    let foundExp = windowNums.find(n => n >= 500000000);
-
+    // 3. 備援：逐行數字提取與量級分類
     if (!foundKills || !foundMeso || !foundExp) {
-      if (windowNums.length >= 3) {
-        foundKills = foundKills || windowNums[0];
-        foundMeso = foundMeso || windowNums[1];
-        foundExp = foundExp || windowNums[2];
+      const lines = engText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      const windowNums = [];
+
+      lines.forEach(line => {
+        if (line.includes(':')) return;
+        const cleanDigits = line.replace(/[^\d]/g, '');
+        if (cleanDigits.length > 0) {
+          const val = parseInt(cleanDigits, 10);
+          if (!isNaN(val) && val > 0 && val < 1e15) {
+            if (val <= 50 && windowNums.length === 0) return;
+            windowNums.push(val);
+          }
+        }
+      });
+
+      foundKills = foundKills || windowNums.find(n => n >= 50 && n < 500000);
+      foundMeso = foundMeso || windowNums.find(n => n >= 500000 && n < 500000000);
+      foundExp = foundExp || windowNums.find(n => n >= 500000000);
+
+      if (!foundKills || !foundMeso || !foundExp) {
+        if (windowNums.length >= 3) {
+          foundKills = foundKills || windowNums[0];
+          foundMeso = foundMeso || windowNums[1];
+          foundExp = foundExp || windowNums[2];
+        }
       }
     }
 
