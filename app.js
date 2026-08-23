@@ -456,8 +456,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const data = imgData.data;
 
     for (let i = 0; i < data.length; i += 4) {
-      const avg = (data[i] + data[i + 1] + data[i + 2]) / 3;
-      const v = (avg > 115) ? 0 : 255;
+      const r = data[i], g = data[i+1], b = data[i+2];
+      // 白色與黃色字形判斷 (楓幣/經驗/殺怪字形)
+      const isText = (r > 135 && g > 130) || (r > 125 && g > 125 && b > 125);
+      const v = isText ? 0 : 255;
       data[i] = v; data[i + 1] = v; data[i + 2] = v;
     }
     ctx.putImageData(imgData, 0, 0);
@@ -672,20 +674,20 @@ document.addEventListener('DOMContentLoaded', () => {
       let purpleNebula = 0, tealSphere = 0, pinkSphere = 0, nodestoneSpikes = 0;
       for (let p = 0; p < pixels.length; p += 4) {
         const r = pixels[p], g = pixels[p+1], b = pixels[p+2];
-        if (b > 110 && r > 60 && g < 130) purpleNebula++;
-        else if (g >= b && g > 180 && b > 140 && r > 140) tealSphere++;
-        else if (r > 180 && b > 140 && r > g + 15) pinkSphere++;
-        else if (b > 140 && g > 130 && r < 100) nodestoneSpikes++;
+        if (b > 100 && r > 50 && g < 130) purpleNebula++;
+        else if (g >= b && g > 160 && b > 130 && r > 130) tealSphere++;
+        else if (r > 160 && b > 130 && r > g + 10) pinkSphere++;
+        else if (b > 130 && g > 120 && r < 100) nodestoneSpikes++;
       }
 
       let cardItemType = null;
-      if (nodestoneSpikes >= 25 && pinkSphere === 0) {
+      if (nodestoneSpikes >= 20 && pinkSphere === 0) {
         cardItemType = 'core'; // 核心寶石 (白色晶石群+深青藍外框)
-      } else if (pinkSphere >= 45) {
+      } else if (pinkSphere >= 35) {
         cardItemType = 'weakEnergy'; // 微弱靈魂艾爾達斯氣息 (粉紫能量球)
-      } else if (purpleNebula > 50) {
+      } else if (purpleNebula > 40) {
         cardItemType = 'solFragment'; // 靈魂艾爾達斯碎片 (深紫星雲晶體)
-      } else if (tealSphere > 130 && pinkSphere < 40) {
+      } else if (tealSphere > 30 && pinkSphere < 30) {
         cardItemType = 'solEnergy'; // 靈魂艾爾達斯氣息 (青綠能量球)
       }
 
