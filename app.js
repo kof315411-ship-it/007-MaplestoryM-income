@@ -823,27 +823,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const topHole = (grid[6] && grid[6][midX] === 0);
         const botHole = (grid[bwH - 6] && grid[bwH - 6][midX] === 0);
 
-        // 字形拓撲判定
-        if (topBarPixels >= 7 && basePixels < 3) {
-          parsedDigits.push('7');
-        } else if (basePixels >= 4 && spanW <= 6 && topBarPixels <= 4) {
-          parsedDigits.push('1');
-        } else if (basePixels >= 5 && topBarPixels >= 4 && !botHole && !topHole) {
-          // 底部平底橫條 (例如 2 或 3 或 1)
-          if (grid[bwH - 4] && grid[bwH - 4][minX] === 1 && grid[4] && grid[4][maxX] === 1) {
-            parsedDigits.push('2');
-          } else if (grid[bwH - 4] && grid[bwH - 4][maxX] === 1 && grid[4] && grid[4][maxX] === 1) {
-            parsedDigits.push('3');
-          } else {
-            parsedDigits.push('2');
-          }
-        } else if (botHole && !topHole) {
-          parsedDigits.push('6');
+        // 提取字形局部特徵
+        const leftBot = (grid[bwH - 4] && grid[bwH - 4][minX] === 1) || (grid[bwH - 5] && grid[bwH - 5][minX] === 1);
+        const rightBot = (grid[bwH - 4] && grid[bwH - 4][maxX] === 1) || (grid[bwH - 5] && grid[bwH - 5][maxX] === 1);
+
+        if (topHole && botHole) {
+          parsedDigits.push('0');
         } else if (topHole && !botHole) {
           parsedDigits.push('9');
-        } else if (topHole && botHole) {
-          parsedDigits.push('0');
-        } else if (spanW <= 4) {
+        } else if (botHole && !topHole) {
+          parsedDigits.push('6');
+        } else if (topBarPixels >= 7 && basePixels <= 4) {
+          parsedDigits.push('7');
+        } else if (leftBot && rightBot && basePixels >= 5) {
+          parsedDigits.push('2');
+        } else if (rightBot && !leftBot && basePixels >= 4) {
+          parsedDigits.push('3');
+        } else if (spanW <= 5) {
           parsedDigits.push('1');
         } else {
           parsedDigits.push('1');
