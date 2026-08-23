@@ -512,7 +512,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (sfStarPixels > 80 && sfStarPixels > autHexPixels) mapColorType = 'SF';
     else if (arcCrossPixels > 80 && arcCrossPixels > autHexPixels) mapColorType = 'ARC';
 
-    return { mapCanvas, mapColorType };
+    return { mapCanvas: canvas, mapColorType };
   }
 
   // 裁切主要獲得獎勵道具欄
