@@ -641,7 +641,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // ==========================================================================
-  // 核心邏輯 2.6: 卡片級獨立對應【純圖像辨識 Engine】
+  // 核心邏輯 2.6: 卡片級獨立對應【純圖像與黑底數量辨識 Engine】
   // ==========================================================================
   async function detectCardLevelItemDrops(itemsCanvas, worker) {
     const ctx = itemsCanvas.getContext('2d');
@@ -653,47 +653,48 @@ document.addEventListener('DOMContentLoaded', () => {
     const numCards = 5;
     const effectiveW = canvasW * 0.92;
     const cardW = effectiveW / numCards;
-    const iconH = Math.floor(canvasH * 0.50);
 
-    // 精準數量垂直區間 (從 44% 到 98%)
-    const quantTop = Math.floor(canvasH * 0.44);
-    const quantBot = Math.floor(canvasH * 0.98);
+    // 上半部圖示 (0% ~ 50%)
+    const iconH = Math.floor(canvasH * 0.50);
+    // 底下黑灰底數量區塊 (專注在 55% ~ 96%，排除上方所有圖示色彩干擾)
+    const quantTop = Math.floor(canvasH * 0.55);
+    const quantBot = Math.floor(canvasH * 0.96);
     const quantH = quantBot - quantTop;
 
     for (let c = 0; c < numCards; c++) {
       const startX = Math.floor(c * cardW);
       const currentCardW = Math.floor(cardW);
 
-      // 1. 色彩特徵分析判斷道具種類
+      // 1. 色彩特徵分析判斷道具種類 (精準分離 4 大道具與其他雜項)
       const iconImgData = ctx.getImageData(startX, 0, currentCardW, iconH);
       const pixels = iconImgData.data;
 
-      let cyanCount = 0, pinkCount = 0, purpleCount = 0, whiteDiamondCount = 0;
+      let purpleNebula = 0, tealSphere = 0, pinkSphere = 0, nodestoneSpikes = 0;
       for (let p = 0; p < pixels.length; p += 4) {
         const r = pixels[p], g = pixels[p+1], b = pixels[p+2];
-        if (g > 170 && b > 170 && r < 200) cyanCount++;
-        else if (r > 170 && b > 170 && g < 210 && r > g) pinkCount++;
-        else if (b > 120 && r > 60 && r < 160 && g < 150) purpleCount++;
-        else if (r > 200 && g > 200 && b > 200) whiteDiamondCount++;
+        if (b > 110 && r > 60 && g < 130) purpleNebula++;
+        else if (g >= b && g > 180 && b > 140 && r > 140) tealSphere++;
+        else if (r > 180 && b > 140 && r > g + 15) pinkSphere++;
+        else if (b > 140 && g > 130 && r < 100) nodestoneSpikes++;
       }
 
       let cardItemType = null;
-      if (purpleCount > cyanCount && purpleCount > pinkCount && purpleCount > 25) {
-        cardItemType = 'solFragment';
-      } else if (cyanCount > pinkCount && cyanCount > purpleCount && cyanCount > 25) {
-        cardItemType = 'solEnergy';
-      } else if (pinkCount > cyanCount && pinkCount > purpleCount && pinkCount > 25) {
-        cardItemType = 'weakEnergy';
-      } else if (whiteDiamondCount > 50 && pinkCount < 30 && purpleCount < 55 && cyanCount < 55) {
-        cardItemType = 'core';
+      if (nodestoneSpikes >= 25 && pinkSphere === 0) {
+        cardItemType = 'core'; // 核心寶石 (白色晶石群+深青藍外框)
+      } else if (pinkSphere >= 45) {
+        cardItemType = 'weakEnergy'; // 微弱靈魂艾爾達斯氣息 (粉紫能量球)
+      } else if (purpleNebula > 50) {
+        cardItemType = 'solFragment'; // 靈魂艾爾達斯碎片 (深紫星雲晶體)
+      } else if (tealSphere > 130 && pinkSphere < 40) {
+        cardItemType = 'solEnergy'; // 靈魂艾爾達斯氣息 (青綠能量球)
       }
 
-      console.log(`[Card ${c+1}] cyan=${cyanCount} pink=${pinkCount} purple=${purpleCount} white=${whiteDiamondCount} => ${cardItemType || 'SKIP'}`);
+      console.log(`[Card ${c+1}] purple=${purpleNebula} teal=${tealSphere} pink=${pinkSphere} nodestone=${nodestoneSpikes} => ${cardItemType || 'SKIP'}`);
       if (!cardItemType) continue;
 
-      // 2. 建立 5x 放大量數 canvas（白底）
-      const quantScale = 5;
-      const pad = 25;
+      // 2. 專注底層黑灰底 "x 數字" 區域 (純黑灰底、純白文字高對比處理)
+      const quantScale = 6;
+      const pad = 20;
       const scW = currentCardW * quantScale + pad * 2;
       const scH = quantH * quantScale + pad * 2;
 
@@ -703,11 +704,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const scCtx = baseCanvas.getContext('2d');
       scCtx.fillStyle = '#FFFFFF';
       scCtx.fillRect(0, 0, scW, scH);
-      scCtx.imageSmoothingEnabled = true;
-      scCtx.imageSmoothingQuality = 'high';
+      scCtx.imageSmoothingEnabled = false; // 保持像素銳利
       scCtx.drawImage(itemsCanvas, startX, quantTop, currentCardW, quantH, pad, pad, currentCardW * quantScale, quantH * quantScale);
 
-      // 3. 消除上方 35% 圖示殘影雜訊，純白字高對比二值化處理
+      // 3. 純白字二值化 (白文字轉純黑，黑灰底轉純白)
       const bwCanvas = document.createElement('canvas');
       bwCanvas.width = scW; bwCanvas.height = scH;
       const bwCtx = bwCanvas.getContext('2d');
@@ -715,25 +715,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const bwData = bwCtx.getImageData(0, 0, scW, scH);
       const d = bwData.data;
-      const cutoffY = Math.floor(scH * 0.35);
 
-      for (let y = 0; y < scH; y++) {
-        for (let x = 0; x < scW; x++) {
-          const idx = (y * scW + x) * 4;
-          if (y < cutoffY) {
-            d[idx] = 255; d[idx+1] = 255; d[idx+2] = 255; // 塗白上方殘影
-          } else {
-            const r = d[idx], g = d[idx+1], b = d[idx+2];
-            const avg = (r + g + b) / 3;
-            const isWhite = (avg > 120 && Math.abs(r - g) < 30 && Math.abs(g - b) < 30);
-            const v = isWhite ? 0 : 255;
-            d[idx] = v; d[idx+1] = v; d[idx+2] = v;
-          }
-        }
+      for (let i = 0; i < d.length; i += 4) {
+        const r = d[i], g = d[i+1], b = d[i+2];
+        const isWhiteText = (r > 130 && g > 130 && b > 130 && Math.abs(r - g) < 25 && Math.abs(g - b) < 25);
+        const v = isWhiteText ? 0 : 255;
+        d[i] = v; d[i+1] = v; d[i+2] = v;
       }
       bwCtx.putImageData(bwData, 0, 0);
 
-      // 4. OCR 辨識 x 數字
+      // 4. OCR 辨識 x 數字 (限定字符 whitelist 與 PSM 7 單行模式)
       await worker.setParameters({
         tessedit_char_whitelist: '0123456789xX',
         tessedit_pageseg_mode: '7'
@@ -754,16 +745,16 @@ document.addEventListener('DOMContentLoaded', () => {
         cardQuant = 1;
       }
 
-      console.log(`[Card ${c+1}] Type: ${cardItemType}, OCR Text: "${rawOCRText}", Final Quant: ${cardQuant}`);
+      console.log(`[Card ${c+1}] Type: ${cardItemType}, OCR: "${rawOCRText}", Final Quant: ${cardQuant}`);
       detectedCounts[cardItemType] += cardQuant;
     }
 
     console.log('[Final Item Counts]', detectedCounts);
 
-    if (inputItemCore) inputItemCore.value = detectedCounts.core;
     if (inputItemSolFragment) inputItemSolFragment.value = detectedCounts.solFragment;
     if (inputItemSolEnergy) inputItemSolEnergy.value = detectedCounts.solEnergy;
     if (inputItemWeakEnergy) inputItemWeakEnergy.value = detectedCounts.weakEnergy;
+    if (inputItemCore) inputItemCore.value = detectedCounts.core;
 
     await worker.setParameters({ tessedit_pageseg_mode: '6' });
     updateCalculations();

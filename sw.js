@@ -1,11 +1,11 @@
 /* ==========================================================================
-   æ¥“ä?è°·M ?›æ??¶ç??†æ???- Service Worker (v16 ç¶²è·¯?ªå? Network-First ç­–ç•¥)
+   æ¥“ä?è°·M ?›æ??¶ç??†æ???- Service Worker (v17 ç¶²è·¯?ªå? Network-First ç­–ç•¥)
    ========================================================================== */
 
-const CACHE_NAME = 'maplem-income-v16';
+const CACHE_NAME = 'maplem-income-v17';
 
 self.addEventListener('install', (e) => {
-  console.log('[SW v16] Installing and activating immediately...');
+  console.log('[SW v17] Installing and activating immediately...');
   self.skipWaiting();
 });
 
@@ -15,7 +15,7 @@ self.addEventListener('activate', (e) => {
       return Promise.all(
         keys.map((key) => {
           if (key !== CACHE_NAME) {
-            console.log('[SW v16] Deleting old cache:', key);
+            console.log('[SW v17] Deleting old cache:', key);
             return caches.delete(key);
           }
         })
