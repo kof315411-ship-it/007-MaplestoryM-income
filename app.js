@@ -534,7 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const itemsCanvas = document.createElement('canvas');
     const ctx = itemsCanvas.getContext('2d');
-    const scale = 3.0;
+    const scale = 4.0;
 
     itemsCanvas.width = Math.floor(w * scale);
     itemsCanvas.height = Math.floor(h * scale);
@@ -659,11 +659,19 @@ document.addEventListener('DOMContentLoaded', () => {
       weakEnergy: 0
     };
 
+    // 切換 Worker 為純數字單字模式 (避免中文干擾)
+    await worker.setParameters({
+      tessedit_char_whitelist: '0123456789xX',
+      tessedit_pageseg_mode: '8'  // PSM 8 = 單字模式，最適合 "x7" 這類短文字
+    });
+
     const numCards = 5;
     const effectiveW = canvasW * 0.92;
     const cardW = effectiveW / numCards;
     const iconH = Math.floor(canvasH * 0.55);
-    const quantH = Math.floor(canvasH * 0.45);
+    // 只取底部 30%，更精準鎖定 "x數字" 文字區域
+    const quantTop = Math.floor(canvasH * 0.70);
+    const quantH = canvasH - quantTop;
 
     for (let c = 0; c < numCards; c++) {
       const startX = Math.floor(c * cardW);
@@ -699,35 +707,62 @@ document.addEventListener('DOMContentLoaded', () => {
         cardItemType = 'core';
       }
 
+      console.log(`[Card ${c+1}] cyan=${cyanCount} pink=${pinkCount} purple=${purpleCount} white=${whiteDiamondCount} => ${cardItemType || 'SKIP'}`);
+
       if (!cardItemType) continue;
 
-      // 2. 獨立建立此卡片下半部的數量 B&W Canvas
+      // 2. 高解析度獨立數量辨識 Canvas (5x 放大 + 20px 白色邊距)
+      const quantScale = 5;
+      const pad = 20;
       const singleCardCanvas = document.createElement('canvas');
-      singleCardCanvas.width = currentCardW * 2;
-      singleCardCanvas.height = quantH * 2;
+      singleCardCanvas.width = currentCardW * quantScale + pad * 2;
+      singleCardCanvas.height = quantH * quantScale + pad * 2;
 
       const scCtx = singleCardCanvas.getContext('2d');
-      scCtx.imageSmoothingEnabled = true;
-      scCtx.drawImage(itemsCanvas, startX, canvasH - quantH, currentCardW, quantH, 0, 0, singleCardCanvas.width, singleCardCanvas.height);
+      // 先填滿白色背景 (Tesseract 偏好白底黑字)
+      scCtx.fillStyle = '#FFFFFF';
+      scCtx.fillRect(0, 0, singleCardCanvas.width, singleCardCanvas.height);
 
+      // 將數量文字區域繪製到中央 (帶邊距)
+      scCtx.imageSmoothingEnabled = true;
+      scCtx.imageSmoothingQuality = 'high';
+      scCtx.drawImage(
+        itemsCanvas,
+        startX, quantTop, currentCardW, quantH,
+        pad, pad, currentCardW * quantScale, quantH * quantScale
+      );
+
+      // 二值化：亮度 > 130 的像素 → 黑色(文字)，其餘 → 白色(背景)
       const scData = scCtx.getImageData(0, 0, singleCardCanvas.width, singleCardCanvas.height);
       const d = scData.data;
 
       for (let i = 0; i < d.length; i += 4) {
         const avg = (d[i] + d[i + 1] + d[i + 2]) / 3;
-        const v = (avg > 115) ? 0 : 255;
+        const v = (avg > 130) ? 0 : 255;
         d[i] = v; d[i + 1] = v; d[i + 2] = v;
       }
       scCtx.putImageData(scData, 0, 0);
 
-      // OCR 讀取此卡片獨立的 x [數字]
+      // OCR 讀取此卡片獨立的 x[數字]
       const cardRes = await worker.recognize(singleCardCanvas);
       const cardText = cardRes.data.text.trim();
-      const numMatch = cardText.match(/[xX✕×\s]*(\d{1,4})/);
-      const cardQuant = numMatch ? parseInt(numMatch[1], 10) : 1;
 
-      console.log(`[Card ${c+1}] Type: ${cardItemType}, OCR Text: "${cardText}", Quant: ${cardQuant}`);
-      detectedCounts[cardItemType] = cardQuant;
+      // 嘗試多種匹配模式
+      let cardQuant = 0;
+      const matchX = cardText.match(/[xX]\s*(\d{1,4})/);
+      const matchDigit = cardText.match(/(\d{1,4})/);
+      if (matchX) {
+        cardQuant = parseInt(matchX[1], 10);
+      } else if (matchDigit) {
+        cardQuant = parseInt(matchDigit[1], 10);
+      } else {
+        cardQuant = 1; // 至少有 1 個
+      }
+
+      console.log(`[Card ${c+1}] Type: ${cardItemType}, OCR: "${cardText}", Quant: ${cardQuant}`);
+
+      // 累加（同類道具可能出現在多張卡片）
+      detectedCounts[cardItemType] += cardQuant;
     }
 
     console.log('[Card Level Final Detected Item Counts]', detectedCounts);
@@ -737,6 +772,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (inputItemSolFragment) inputItemSolFragment.value = detectedCounts.solFragment;
     if (inputItemSolEnergy) inputItemSolEnergy.value = detectedCounts.solEnergy;
     if (inputItemWeakEnergy) inputItemWeakEnergy.value = detectedCounts.weakEnergy;
+
+    // 恢復 Worker 為通用模式 (以免影響後續使用)
+    await worker.setParameters({
+      tessedit_pageseg_mode: '6'
+    });
 
     updateCalculations();
   }
